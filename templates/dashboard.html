@@ -1,0 +1,412 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        --danger-gradient: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);
+        --info-gradient: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
+        --bank-gradient: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    }
+
+    body {
+        background-color: #f4f7f6;
+    }
+
+    .container-fluid {
+        max-width: 1400px;
+        padding: 2rem;
+    }
+
+    .stat-card {
+        border: none;
+        border-radius: 20px;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+    }
+
+    .stat-icon {
+        position: absolute;
+        right: -10px;
+        bottom: -10px;
+        font-size: 5rem;
+        opacity: 0.15;
+        transform: rotate(-15deg);
+    }
+
+    .filter-bar {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 20px;
+        border: 1px solid rgba(255,255,255,0.3);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    }
+
+    .table-card {
+        background: white;
+        border-radius: 20px;
+        border: none;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.04);
+    }
+
+    .table thead th {
+        background-color: #f8f9fa;
+        color: #495057;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 1px;
+        padding: 15px;
+        border-top: none;
+    }
+
+    .table td {
+        padding: 15px;
+        vertical-align: middle;
+    }
+
+    .badge-soft-success { background: #e6fffa; color: #00b09b; }
+    .badge-soft-danger { background: #fff5f5; color: #e53935; }
+
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 10px; }
+
+    /* تنسيقات التنبيهات */
+    .bank-alert {
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        animation: slideIn 0.5s ease-out;
+    }
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* تنسيق خاص لزر البنك المنسدل */
+    .bank-toggle-btn {
+        background: var(--bank-gradient);
+        color: white;
+        border: none;
+        border-radius: 15px;
+        padding: 12px 25px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+    }
+    .bank-toggle-btn:hover {
+        transform: scale(1.02);
+        color: white;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+
+    @media (max-width: 768px) {
+        .container-fluid { padding: 1rem; }
+        .display-stats { font-size: 1.5rem !important; }
+        .stat-card { margin-bottom: 1rem; }
+    }
+
+    @media print {
+        .filter-bar, .btn, .stat-icon, .bank-alert, .bank-toggle-btn {
+            display: none !important;
+        }
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="filter-bar mb-4">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-12 col-md-4">
+                <label class="small text-muted mb-2 fw-bold"><i class="fas fa-filter me-1"></i> تصفية المدى الزمني:</label>
+                <select name="period" class="form-select border-0 bg-light rounded-pill px-4" onchange="this.form.submit()">
+                    <option value="all" {% if request.GET.period == 'all' %}selected{% endif %}>طوال الوقت</option>
+                    <option value="today" {% if request.GET.period == 'today' %}selected{% endif %}>اليوم</option>
+                    <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>آخر أسبوع</option>
+                    <option value="month" {% if request.GET.period == 'month' %}selected{% endif %}>آخر شهر</option>
+                    <option value="custom" {% if request.GET.period == 'custom' %}selected{% endif %}>تاريخ محدد...</option>
+                </select>
+            </div>
+            
+            {% if request.GET.period == 'custom' %}
+            <div class="col-6 col-md-3">
+                <label class="small text-muted mb-2 fw-bold">من تاريخ:</label>
+                <input type="date" name="start_date" value="{{ request.GET.start_date }}" class="form-control border-0 bg-light rounded-pill">
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="small text-muted mb-2 fw-bold">إلى تاريخ:</label>
+                <input type="date" name="end_date" value="{{ request.GET.end_date }}" class="form-control border-0 bg-light rounded-pill">
+            </div>
+            <div class="col-12 col-md-2">
+                <button type="submit" class="btn btn-primary w-100 rounded-pill shadow-sm">تحديث</button>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            {% for alert in overdue_bank_alerts %}
+            <div class="alert alert-danger bank-alert d-flex align-items-center mb-3" role="alert">
+                <i class="fas fa-exclamation-triangle me-3 fa-2x"></i>
+                <div>
+                    <strong class="d-block">قسط بنكي متأخر!</strong>
+                    يوجد قسط مستحق لـ {{ alert.loan.bank_name }} كان بتاريخ {{ alert.due_date|date:"Y-m-d" }} بمبلغ <strong>{{ alert.total_installment_amount|floatformat:0 }} ج.م</strong>.
+                </div>
+                <a href="/admin/store/bankinstallment/{{ alert.id }}/change/" class="btn btn-danger btn-sm ms-auto rounded-pill px-4">تسجيل الدفع الآن</a>
+            </div>
+            {% endfor %}
+
+            {% for alert in upcoming_bank_alerts %}
+            <div class="alert alert-warning bank-alert d-flex align-items-center mb-3" role="alert">
+                <i class="fas fa-clock me-3 fa-2x text-dark"></i>
+                <div class="text-dark">
+                    <strong class="d-block">موعد استحقاق قريب</strong>
+                    قسط بنك {{ alert.loan.bank_name }} يستحق بتاريخ {{ alert.due_date|date:"Y-m-d" }} بمبلغ <strong>{{ alert.total_installment_amount|floatformat:0 }} ج.م</strong>.
+                </div>
+                <a href="/admin/store/bankinstallment/{{ alert.id }}/change/" class="btn btn-outline-dark btn-sm ms-auto rounded-pill px-4">مراجعة التفاصيل</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card stat-card h-100 p-3" style="background: var(--primary-gradient); color: white;">
+                <div class="stat-icon"><i class="fas fa-shopping-basket"></i></div>
+                <h6 class="opacity-75">إجمالي المبيعات</h6>
+                <h2 class="fw-bold m-0 display-stats">{{ total_sales|floatformat:0 }} <small class="fs-6 fw-light">ج.م</small></h2>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100 p-3" style="background: var(--success-gradient); color: white;">
+                <div class="stat-icon"><i class="fas fa-wallet"></i></div>
+                <h6 class="opacity-75">مستحقات متبقية (لنا)</h6>
+                <h2 class="fw-bold m-0 display-stats">{{ receivable|floatformat:0 }} <small class="fs-6 fw-light">ج.م</small></h2>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100 p-3" style="background: var(--danger-gradient); color: white;">
+                <div class="stat-icon"><i class="fas fa-credit-card"></i></div>
+                <h6 class="opacity-75">مديونيات متبقية (علينا)</h6>
+                <h2 class="fw-bold m-0 display-stats">{{ payable|floatformat:0 }} <small class="fs-6 fw-light">ج.م</small></h2>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100 p-3" style="background: var(--info-gradient); color: white;">
+                <div class="stat-icon"><i class="fas fa-chart-pie"></i></div>
+                <h6 class="opacity-75">صافي الأرباح</h6>
+                <h2 class="fw-bold m-0 display-stats">{{ net_profit|floatformat:0 }} <small class="fs-6 fw-light">ج.م</small></h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-12">
+            <button class="bank-toggle-btn w-100 d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#bankDetailsCollapse" aria-expanded="false">
+                <span><i class="fas fa-university me-2"></i> ملخص مديونية البنك</span>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            
+            <div class="collapse mt-3" id="bankDetailsCollapse">
+                <div class="card stat-card p-4" style="background: var(--bank-gradient); color: white;">
+                    <div class="row align-items-center">
+                        <div class="col-md-4 border-end border-white border-opacity-25">
+                            <h6 class="opacity-75">إجمالي المتبقي للبنك</h6>
+                            <h2 class="fw-bold m-0">{{ bank_summary.total_remaining|floatformat:0 }} ج.م</h2>
+                        </div>
+                        <div class="col-md-4 border-end border-white border-opacity-25 px-md-4">
+                            <h6 class="opacity-75 text-warning">القسط القادم</h6>
+                            <h4 class="fw-bold m-0">{{ bank_summary.next_installment_amount|floatformat:0 }} ج.م</h4>
+                            <small>تاريخ: {{ bank_summary.next_installment_date|date:"Y/m/d"|default:"لا يوجد" }}</small>
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <a href="{% url 'bank_statement' %}" class="btn btn-light rounded-pill fw-bold px-4">
+                                كشف حساب كامل <i class="fas fa-arrow-left ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-5">
+        <div class="col-lg-6">
+            <div class="card table-card h-100">
+                <div class="card-header bg-transparent py-4 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-up text-success me-2"></i>مستحقاتنا لدى الغير</h5>
+                    <span class="badge bg-success rounded-pill px-3">{{ receivable|floatformat:0 }} ج.م</span>
+                </div>
+                <div class="table-responsive custom-scroll" style="max-height: 400px;">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>الاسم</th>
+                                <th>المنتج</th>
+                                <th>التاريخ</th>
+                                <th class="text-end">المبلغ المتبقي</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in receivable_details %}
+                            <tr>
+                                <td class="fw-bold">{{ record.transaction.contact.name }}</td>
+                                <td><span class="badge bg-light text-dark fw-normal">{{ record.transaction.product.name }}</span></td>
+                                <td class="text-muted small">{{ record.transaction.date|date:"Y-m-d" }}</td>
+                                <td class="text-end">
+                                    <div class="fw-bold text-success">{{ record.remaining_amount|floatformat:0 }}</div>
+                                    <div class="text-muted" style="font-size: 0.7rem;">من أصل {{ record.transaction.total_price|floatformat:0 }}</div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card table-card h-100">
+                <div class="card-header bg-transparent py-4 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-down text-danger me-2"></i>ديون للموردين</h5>
+                    <span class="badge bg-danger rounded-pill px-3">{{ payable|floatformat:0 }} ج.م</span>
+                </div>
+                <div class="table-responsive custom-scroll" style="max-height: 400px;">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>المورد</th>
+                                <th>المنتج</th>
+                                <th>التاريخ</th>
+                                <th class="text-end">المبلغ المتبقي</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in debt_details %}
+                            <tr>
+                                <td class="fw-bold">{{ record.transaction.contact.name }}</td>
+                                <td><span class="badge bg-light text-dark fw-normal">{{ record.transaction.product.name }}</span></td>
+                                <td class="text-muted small">{{ record.transaction.date|date:"Y-m-d" }}</td>
+                                <td class="text-end">
+                                    <div class="fw-bold text-danger">{{ record.remaining_amount|floatformat:0 }}</div>
+                                    <div class="text-muted" style="font-size: 0.7rem;">من أصل {{ record.transaction.total_price|floatformat:0 }}</div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card table-card mb-5">
+        <div class="card-header bg-transparent py-4 border-bottom d-flex align-items-center justify-content-between">
+            <h5 class="m-0 fw-bold"><i class="fas fa-history text-info me-2"></i>آخر عمليات المبيعات</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th class="ps-4">التاريخ</th>
+                        <th>العميل/التاجر</th>
+                        <th>المنتج والوزن</th>
+                        <th>الحالة المالية</th>
+                        <th class="text-end pe-4">إجمالي العملية</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in recent_sales %}
+                    <tr>
+                        <td class="ps-4 text-muted small">{{ sale.date|date:"Y-m-d" }}</td>
+                        <td class="fw-bold">{{ sale.contact.name }}</td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-dark text-white border-0 me-2">{{ sale.product.name }}</span>
+                                <span class="text-muted small">{{ sale.weight|floatformat:0 }} كجم</span>
+                            </div>
+                        </td>
+                        <td>
+                            {% if sale.financialrecord.is_fully_paid %}
+                            <span class="badge badge-soft-success rounded-pill px-3"><i class="fas fa-check-circle me-1"></i> مدفوع بالكامل</span>
+                            {% else %}
+                            <div class="d-flex flex-column">
+                                <span class="badge badge-soft-danger rounded-pill px-3 mb-1">
+                                    <i class="fas fa-clock me-1"></i> متبقي: {{ sale.financialrecord.remaining_amount|floatformat:0 }}
+                                </span>
+                                <small class="text-muted px-1" style="font-size: 0.75rem;">محصل: {{ sale.financialrecord.amount_paid|floatformat:0 }}</small>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-4 fw-bold text-primary">{{ sale.total_price|floatformat:0 }} ج.م</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5">لا توجد عمليات مبيعات</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card table-card overflow-hidden mb-5">
+        <div class="card-header bg-white py-4 border-bottom">
+            <h5 class="m-0 fw-bold"><i class="fas fa-warehouse text-warning me-2"></i>حالة المخزون الحالي</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle m-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">المنتج</th>
+                        <th>المتوفر بالمخزن</th>
+                        <th>سعر الشراء</th>
+                        <th>سعر البيع</th>
+                        <th class="text-center">مؤشر المخزون</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in inventory %}
+                    <tr>
+                        <td class="ps-4 fw-bold">{{ item.name }}</td>
+                        <td><span class="badge bg-dark text-white rounded-pill px-3">{{ item.quantity_available|floatformat:0 }} كجم</span></td>
+                        <td class="text-muted">{{ item.purchase_price_per_kg|floatformat:0 }} ج.م</td>
+                        <td class="text-success fw-bold">{{ item.selling_price_per_kg|floatformat:0 }} ج.م</td>
+                        <td class="text-center">
+                            {% if item.quantity_available < 50 %}
+                            <div class="progress" style="height: 8px; width: 100px; margin: 0 auto;">
+                                <div class="progress-bar bg-danger" style="width: 30%"></div>
+                            </div>
+                            <small class="text-danger">منخفض جداً</small>
+                            {% else %}
+                            <div class="progress" style="height: 8px; width: 100px; margin: 0 auto;">
+                                <div class="progress-bar bg-success" style="width: 100%"></div>
+                            </div>
+                            <small class="text-success">متوفر</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5">المخزن فارغ</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="text-center py-5">
+        <p class="text-muted small"><i class="fas fa-shield-alt me-1"></i> نظام الإدارة الذكي - التحديث القادم في غضون ثوانٍ</p>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700&display=swap" rel="stylesheet">
+
+<style>
+    body { font-family: 'Cairo', sans-serif; background: #f8fafc; }
+    .premium-card { border: none; border-radius: 15px; transition: 0.3s; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .premium-card:hover { transform: translateY(-5px); }
+    .icon-circle { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+    .table-wrapper { background: white; border-radius: 15px; overflow: hidden; border: 1px solid #edf2f7; }
+    .badge-soft { padding: 0.5em 1.2em; border-radius: 8px; font-weight: 700; font-size: 0.75rem; display: inline-block; }
+    
+    @media (max-width: 768px) {
+        .page-header { text-align: center; flex-direction: column; }
+        .table { font-size: 0.85rem; }
+    }
+    @media print { .no-print { display: none !important; } }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4 mt-3 flex-wrap gap-3 page-header">
+    <div>
+        <h3 class="fw-bold mb-0 text-dark"><i class="fas fa-user-circle text-primary me-2"></i> {{ contact.name }}</h3>
+        <small class="text-muted">كشف حساب مالي تفصيلي</small>
+    </div>
+    <button onclick="window.print()" class="btn btn-dark rounded-pill px-4 no-print shadow-sm">
+        <i class="fas fa-print me-2"></i> طباعة التقرير
+    </button>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="premium-card p-3 h-100">
+            <div class="icon-circle bg-primary bg-opacity-10 text-primary mb-2"><i class="fas fa-arrow-up"></i></div>
+            <small class="text-muted d-block fw-bold">إجمالي لنا</small>
+            <span class="fw-bold h5 mb-0">{{ total_out|floatformat:0 }}</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="premium-card p-3 h-100">
+            <div class="icon-circle bg-danger bg-opacity-10 text-danger mb-2"><i class="fas fa-arrow-down"></i></div>
+            <small class="text-muted d-block fw-bold">إجمالي علينا</small>
+            <span class="fw-bold h5 mb-0">{{ total_in|floatformat:0 }}</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="premium-card p-3 h-100 border-start border-warning border-4">
+            <div class="icon-circle bg-warning bg-opacity-10 text-warning mb-2"><i class="fas fa-wallet"></i></div>
+            <small class="text-muted d-block fw-bold">صافي المتبقي</small>
+            <span class="fw-bold h5 mb-0">{{ total_remaining|floatformat:0 }}</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        {% if net_balance == 0 %}
+            <div class="premium-card p-3 h-100 bg-success text-white shadow">
+                <div class="icon-circle bg-white bg-opacity-20 mb-2"><i class="fas fa-check-double"></i></div>
+                <small class="text-white-50 d-block fw-bold">وضعية الحساب</small>
+                <span class="fw-bold h6 m-0">الحساب خالص</span>
+            </div>
+        {% else %}
+            <div class="premium-card p-3 h-100 {% if net_balance > 0 %}bg-primary{% else %}bg-danger{% endif %} text-white shadow">
+                <div class="icon-circle bg-white bg-opacity-20 mb-2">
+                    <i class="fas {% if net_balance > 0 %}fa-arrow-trend-up{% else %}fa-arrow-trend-down{% endif %}"></i>
+                </div>
+                <small class="text-white-50 d-block fw-bold">وضعية الحساب</small>
+                <span class="fw-bold h6 m-0">
+                    {% if net_balance > 0 %}
+                        لينا مبلغ {{ total_remaining|floatformat:0 }}
+                    {% else %}
+                        علينا مبلغ {{ total_remaining|floatformat:0 }}
+                    {% endif %}
+                </span>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="table-wrapper shadow-sm border-0">
+    <div class="p-3 bg-white border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0 text-secondary"><i class="fas fa-list me-2"></i> سجل المعاملات</h6>
+        <span class="badge bg-light text-dark rounded-pill">{{ transactions.count }} حركة</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="bg-light text-center">
+                <tr>
+                    <th class="py-3 small text-muted">التاريخ</th>
+                    <th class="py-3 small text-muted">النوع</th>
+                    <th class="py-3 small text-muted">الصنف</th>
+                    <th class="py-3 small text-muted">الإجمالي</th>
+                    <th class="py-3 small text-success">المدفوع</th>
+                    <th class="py-3 small text-danger">المتبقي</th>
+                </tr>
+            </thead>
+            <tbody class="text-center">
+                {% for t in transactions %}
+                <tr>
+                    <td class="text-muted small">{{ t.date|date:"Y/m/d" }}</td>
+                    <td>
+                        <span class="badge-soft {% if t.transaction_type == 'in' %}bg-danger-subtle text-danger{% else %}bg-success-subtle text-success{% endif %}">
+                            {% if t.transaction_type == 'in' %}وارد{% else %}صادر{% endif %}
+                        </span>
+                    </td>
+                    <td class="fw-bold">{{ t.product.name }}</td>
+                    <td class="fw-bold">{{ t.total_price|floatformat:0 }}</td>
+                    <td class="text-success fw-bold">
+                        {% if user.is_superuser %}
+                            <form action="{% url 'update_paid_amount' t.financialrecord.id %}" method="POST" class="d-flex align-items-center justify-content-center gap-1">
+                                {% csrf_token %}
+                                <input type="number" name="amount_paid" 
+                                    value="{{ t.financialrecord.amount_paid|floatformat:0 }}" 
+                                    class="form-control form-control-sm text-center fw-bold text-success border-0 bg-light" 
+                                    style="width: 80px;" onchange="this.form.submit()">
+                                <button type="submit" class="btn btn-sm text-primary p-0"><i class="fas fa-save small"></i></button>
+                            </form>
+                        {% else %}
+                            {{ t.financialrecord.amount_paid|default:0|floatformat:0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.financialrecord.remaining_amount > 0 %}
+                            <span class="text-danger fw-bold">{{ t.financialrecord.remaining_amount|floatformat:0 }}</span>
+                        {% else %}
+                            <span class="text-success small fw-bold"><i class="fas fa-check me-1"></i>خالص</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="py-5 text-muted">لا توجد معاملات مسجلة لهذا الاسم.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
