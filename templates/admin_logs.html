@@ -93,16 +93,16 @@
                 </div>
             </div>
             <div class="col-md-4 col-xl-2">
-                <div class="f-card f-card-net shadow-sm">
-                    <div class="f-card-icon"><i class="fas fa-gem"></i></div>
-                    <div class="f-card-label">صافي رأس المال</div>
-                    <div class="f-card-value text-white">{{ total_capital|floatformat:0 }}<small>ج.م</small></div>
+                <div class="f-card f-card-profit shadow-sm">
+                    <div class="f-card-icon text-success"><i class="fas fa-hand-holding-dollar"></i></div>
+                    <div class="f-card-label">أرباح الفترة</div>
+                    <div class="f-card-value text-success">{{ total_profit_period|floatformat:0 }}<small>ج.م</small></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="container-fluid">
+    <div class="container-fluid mb-5">
         <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
             <div class="card-header bg-white py-4 px-4 d-flex justify-content-between align-items-center border-0">
                 <h5 class="mb-0 fw-bold text-dark fs-4">
@@ -159,10 +159,64 @@
             </div>
         </div>
     </div>
+
+    <div class="container-fluid mb-5">
+        <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="card-header bg-white py-4 px-4 border-0">
+                <h5 class="mb-0 fw-bold text-dark fs-4">
+                    <i class="fas fa-chart-line text-success me-2"></i>تحليل أرباح المبيعات (سجل المكسب)
+                </h5>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 custom-table">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">التاريخ</th>
+                            <th>المنتج</th>
+                            <th>الوزن</th> <th>العميل</th>
+                            <th>سعر البيع</th>
+                            <th>التكلفة (شراء)</th>
+                            <th class="pe-4 text-center">صافي الربح</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in profit_logs %}
+                        <tr>
+                            <td class="ps-4">{{ log.date|date:"d/m/Y" }}</td>
+                            <td><span class="product-badge bg-info-light text-dark">{{ log.product.name }}</span></td>
+                            <td class="fw-bold text-primary">{{ log.weight }} <small class="text-muted small">كجم</small></td> <td>{{ log.contact.name }}</td>
+                            <td class="fw-bold text-dark">{{ log.total_price|floatformat:0 }} ج.م</td>
+                            <td class="text-muted small">{{ log.cost_price|floatformat:0 }} ج.م</td>
+                            <td class="pe-4 text-center">
+                                <span class="badge bg-success px-3 py-2 rounded-pill shadow-sm">
+                                    + {{ log.unit_profit|floatformat:0 }} ج.م
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center py-5">لا توجد مبيعات مسجلة في هذه الفترة.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid mb-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="f-card f-card-net shadow-lg">
+                    <div class="f-card-icon"><i class="fas fa-gem"></i></div>
+                    <div class="f-card-label">إجمالي قيمة العمل (الصافي)</div>
+                    <div class="f-card-value text-white">{{ total_capital|floatformat:0 }}<small>ج.م</small></div>
+                    <p class="small mt-2 opacity-75">يشمل (الخزنة + البضاعة + لينا) - (علينا + البنك)</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <style>
-    /* الإعدادات والمتغيرات */
     :root {
         --primary-gradient: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
         --success-gradient: linear-gradient(135deg, #1cc88a 0%, #13855c 100%);
@@ -171,7 +225,6 @@
 
     body { font-family: 'Cairo', sans-serif; background-color: var(--bg-body); color: #4e5e6a; }
     
-    /* ستايل زر الفلترة النشط */
     .btn-filter.active {
         background-color: #4e73df !important;
         color: white !important;
@@ -179,16 +232,15 @@
         box-shadow: inset 0 3px 5px rgba(0,0,0,0.125);
     }
 
-    /* تحسين حقول المدخلات */
     .form-control:focus { border-color: #4e73df; box-shadow: none; background: #fff; }
     .btn-outline-primary { color: #4e73df; border-color: #e3e6f0; }
     .btn-outline-primary:hover { background: #4e73df; color: #fff; }
 
-    /* ستايل بطاقات التقارير */
     .f-card {
         padding: 25px 20px; border-radius: 20px; background: #fff;
         position: relative; overflow: hidden; transition: all 0.4s ease;
         border: none; display: flex; flex-direction: column; align-items: center; text-align: center;
+        height: 100%;
     }
     .f-card-icon {
         width: 50px; height: 50px; background: rgba(0,0,0,0.05); border-radius: 15px;
@@ -197,44 +249,34 @@
     .f-card-label { font-size: 0.85rem; font-weight: 600; color: #858796; margin-bottom: 5px; text-transform: uppercase; }
     .f-card-value { font-size: 1.6rem; font-weight: 800; }
     
-    /* ألوان البطاقات */
     .f-card-cash { border-bottom: 5px solid #f6c23e; } .f-card-cash i { color: #f6c23e; }
     .f-card-inventory { background: var(--success-gradient); color: #fff; } .f-card-inventory .f-card-label { color: rgba(255,255,255,0.8); }
     .f-card-receivable { border-bottom: 5px solid #36b9cc; } .f-card-receivable i { color: #36b9cc; }
     .f-card-payable { border-bottom: 5px solid #e74a3b; } .f-card-payable i { color: #e74a3b; }
     .f-card-bank { border-bottom: 5px solid #858796; } .f-card-bank i { color: #858796; }
     .f-card-net { background: var(--primary-gradient); color: #fff; } .f-card-net .f-card-label { color: rgba(255,255,255,0.8); }
+    .f-card-profit { border-bottom: 5px solid #1cc88a; }
 
-    /* ستايل الجدول */
+    .product-badge { background: #f0f2f9; padding: 5px 12px; border-radius: 8px; font-weight: 600; }
+    .bg-info-light { background-color: #e3f2fd; }
+
     .custom-table thead th { background-color: #f8f9fc; color: #4e73df; font-weight: 700; padding: 20px; border: none; }
     .date-cell { width: 50px; background: #f8f9fc; border-radius: 10px; padding: 5px; text-align: center; border: 1px solid #e3e6f0; }
     .total-price-tag { background: #1cc88a; color: #fff; padding: 8px 15px; border-radius: 10px; font-weight: 800; }
     .btn-primary-gradient { background: var(--primary-gradient); color: #fff; border: none; }
 
-    /* إعدادات الطباعة */
     @media print {
         .no-print { display: none !important; }
         body { background-color: white !important; }
-        .container-fluid { width: 100% !important; padding: 0 !important; }
-        .f-card { border: 1px solid #eee !important; box-shadow: none !important; break-inside: avoid; }
-        .card { box-shadow: none !important; border: 1px solid #eee !important; }
         .f-card-inventory, .f-card-net { background: #f8f9fc !important; color: black !important; }
-        .f-card-inventory .f-card-label, .f-card-net .f-card-label, .f-card-inventory .f-card-value, .f-card-net .f-card-value { color: black !important; }
-        .total-price-tag { border: 1px solid #1cc88a !important; color: #13855c !important; background: none !important; }
-    }
-
-    @media (max-width: 768px) {
-        .f-card { margin-bottom: 10px; }
+        .f-card-inventory *, .f-card-net * { color: black !important; }
     }
 </style>
 
 <script>
-    // جافا سكريبت للتأكد من بقاء التواريخ نشطة عند اختيار فترة محددة
     document.querySelectorAll('.btn-filter').forEach(button => {
         button.addEventListener('click', function() {
-            // إزالة الكلاس النشط من الجميع
             document.querySelectorAll('.btn-filter').forEach(btn => btn.classList.remove('active'));
-            // إضافة النشط للزر المضغطوط
             this.classList.add('active');
         });
     });

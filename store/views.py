@@ -172,9 +172,9 @@ def add_transaction_direct(request):
             price = Decimal(request.POST.get('price_per_kg'))
             t_type = request.POST.get('transaction_type')
             
-            # جلب المبلغ المدفوع الآن من الفورم
+            # 1. جلب المبلغ المدفوع الآن من الفورم (القيمة الافتراضية 0)
             amount_paid_now = request.POST.get('amount_paid_now', '0')
-            paid_dec = Decimal(amount_paid_now)
+            paid_dec = Decimal(amount_paid_now) if amount_paid_now else Decimal(0)
             
             if t_type == 'out':
                 product = get_object_or_404(Product, id=product_id)
@@ -182,9 +182,8 @@ def add_transaction_direct(request):
                     messages.error(request, f"الكمية غير كافية بالمخزن! المتاح: {product.quantity_available}")
                     return redirect(request.META.get('HTTP_REFERER'))
 
-            # إنشاء الحركة التجارية
-            # ملاحظة: بما أننا أضفنا حقل paid_amount_now للموديل، سيقوم الـ save() في الموديل
-            # بإنشاء الـ PaymentInstallment تلقائياً، فلا نحتاج لإنشائه يدوياً هنا.
+            # 2. إنشاء الحركة التجارية مع تمرير المبلغ المدفوع
+            # تأكد أن موديل DailyTransaction يحتوي على حقل باسم paid_amount_now
             DailyTransaction.objects.create(
                 date=request.POST.get('date'),
                 transaction_type=t_type,
@@ -192,10 +191,10 @@ def add_transaction_direct(request):
                 contact_id=contact_id,
                 weight=weight,
                 price_per_kg=price,
-                paid_amount_now=paid_dec  # نمرر القيمة للموديل ليقوم بالمعالجة
+                paid_amount_now=paid_dec  
             )
 
-            messages.success(request, "تمت إضافة العملية وتحديث السجلات المالية والخزنة بنجاح.")
+            messages.success(request, "تمت إضافة العملية وتحديث السجلات المالية بنجاح.")
         except Exception as e:
             messages.error(request, f"خطأ في البيانات المرسلة: {e}")
             
@@ -293,36 +292,52 @@ def admin_logs_dashboard(request):
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
-    # تجهيز الكويري سيت الأساسية
+    # 2. تجهيز الكويري سيت الأساسية (بدون تصفية زمنية بعد)
     purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact')
+    
     payment_logs = PaymentInstallment.objects.select_related(
         'financial_record__transaction', 
         'financial_record__transaction__contact'
     )
 
-    # 2. تطبيق منطق التصفية الزمني
+    # تجهيز سجل الأرباح مع حساب التكلفة والربح لكل عملية (للبيع فقط)
+    profit_logs = DailyTransaction.objects.filter(transaction_type='out').select_related('product', 'contact').annotate(
+        # تكلفة البضاعة = الوزن المباع × سعر شراء الكيلو المسجل في موديل المنتج
+        cost_price=ExpressionWrapper(
+            F('weight') * F('product__purchase_price_per_kg'), 
+            output_field=DecimalField()
+        ),
+        # الربح الصافي للعملية = إجمالي سعر البيع - تكلفة البضاعة
+        unit_profit=ExpressionWrapper(
+            F('total_price') - (F('weight') * F('product__purchase_price_per_kg')), 
+            output_field=DecimalField()
+        )
+    )
+
+    # 3. تطبيق منطق التصفية الزمني على كافة السجلات
     if period == 'today':
         purchase_logs = purchase_logs.filter(date=today)
         payment_logs = payment_logs.filter(date_paid__date=today)
+        profit_logs = profit_logs.filter(date=today)
     elif period == 'week':
         last_week = today - timedelta(days=7)
         purchase_logs = purchase_logs.filter(date__gte=last_week)
         payment_logs = payment_logs.filter(date_paid__date__gte=last_week)
+        profit_logs = profit_logs.filter(date__gte=last_week)
     elif period == 'month':
         last_month = today - timedelta(days=30)
         purchase_logs = purchase_logs.filter(date__gte=last_month)
         payment_logs = payment_logs.filter(date_paid__date__gte=last_month)
-    # تصفية مدى زمني مخصص (من .. إلى)
+        profit_logs = profit_logs.filter(date__gte=last_month)
     elif start_date and end_date:
         purchase_logs = purchase_logs.filter(date__range=[start_date, end_date])
         payment_logs = payment_logs.filter(date_paid__date__range=[start_date, end_date])
+        profit_logs = profit_logs.filter(date__range=[start_date, end_date])
 
-    # ترتيب النتائج بعد التصفية
-    purchase_logs = purchase_logs.order_by('-date')
-    payment_logs = payment_logs.order_by('-date_paid')[:20]
+    # 4. حساب إجمالي الأرباح للفترة المحددة
+    total_profit_period = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
 
-    # 3. حساب الإحصائيات (تظل ثابتة للحظة الحالية أو يمكن تصفيتها حسب رغبتك)
-    # ملاحظة: عادة أرقام "الخزنة" و"رأس المال" تعبر عن الوضع "الآن" وليس مدى زمني
+    # 5. حساب الإحصائيات العامة (الوضع الحالي)
     capital_obj = Capital.objects.first()
     cash_in_hand = capital_obj.initial_amount if capital_obj else Decimal(0)
 
@@ -343,20 +358,27 @@ def admin_logs_dashboard(request):
 
     total_capital = (cash_in_hand + total_inventory_value + receivable) - (payable + bank_remaining)
 
-    # 4. تمرير البيانات للـ Template
+    # 6. تمرير البيانات للـ Template
     context = {
+        # بيانات الإحصائيات (البطاقات العلوية)
         'cash_in_hand': cash_in_hand,
         'total_inventory_value': total_inventory_value,
         'total_capital': total_capital,
         'receivable': receivable,
         'payable': payable,
         'bank_remaining': bank_remaining,
-        'purchase_logs': purchase_logs,
-        'payment_logs': payment_logs,
+        'total_profit_period': total_profit_period,
+        
+        # سجلات الجداول
+        'purchase_logs': purchase_logs.order_by('-date'),
+        'payment_logs': payment_logs.order_by('-date_paid')[:20],
+        'profit_logs': profit_logs.order_by('-date'),
+        
+        # بيانات التصفية والوقت
         'today': today,
-        # نرسل القيم المختارة لكي تظهر في حقول الإدخال بعد التحميل
         'start_date': start_date,
         'end_date': end_date,
         'period': period,
     }
+
     return render(request, 'admin_logs.html', context)
