@@ -183,7 +183,6 @@ def add_transaction_direct(request):
                     return redirect(request.META.get('HTTP_REFERER'))
 
             # 2. إنشاء الحركة التجارية مع تمرير المبلغ المدفوع
-            # تأكد أن موديل DailyTransaction يحتوي على حقل باسم paid_amount_now
             DailyTransaction.objects.create(
                 date=request.POST.get('date'),
                 transaction_type=t_type,
@@ -202,7 +201,6 @@ def add_transaction_direct(request):
 
 @user_passes_test(lambda u: u.is_superuser)
 def update_paid_amount(request, record_id):
-    """تعديل: تسجيل الدفعة مع تحديد النوع (قبض/صرف) تلقائياً"""
     if request.method == 'POST':
         target_id = record_id if record_id != 0 else request.POST.get('record_id')
         payment_amount = request.POST.get('amount_paid')
@@ -286,35 +284,35 @@ def update_installment_charges(request, inst_id):
 
 @user_passes_test(lambda u: u.is_superuser)
 def admin_logs_dashboard(request):
-    # 1. جلب بارامترات التصفية من الرابط (GET Request)
     period = request.GET.get('period', 'all')
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
-    # 2. تجهيز الكويري سيت الأساسية (بدون تصفية زمنية بعد)
-    purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact')
+    # 1. سجل المشتريات (الوارد) - مع جلب المبلغ المدفوع
+    purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact', 'financialrecord').annotate(
+        paid_amount=F('financialrecord__amount_paid')
+    )
     
     payment_logs = PaymentInstallment.objects.select_related(
         'financial_record__transaction', 
         'financial_record__transaction__contact'
     )
 
-    # تجهيز سجل الأرباح مع حساب التكلفة والربح لكل عملية (للبيع فقط)
-    profit_logs = DailyTransaction.objects.filter(transaction_type='out').select_related('product', 'contact').annotate(
-        # تكلفة البضاعة = الوزن المباع × سعر شراء الكيلو المسجل في موديل المنتج
+    # 2. سجل الأرباح (المبيعات) - تم إضافة annotate لجلب المبلغ المدفوع (paid_amount)
+    profit_logs = DailyTransaction.objects.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').annotate(
+        paid_amount=F('financialrecord__amount_paid'), # الحقل المضاف ليظهر في القالب
         cost_price=ExpressionWrapper(
             F('weight') * F('product__purchase_price_per_kg'), 
             output_field=DecimalField()
         ),
-        # الربح الصافي للعملية = إجمالي سعر البيع - تكلفة البضاعة
         unit_profit=ExpressionWrapper(
             F('total_price') - (F('weight') * F('product__purchase_price_per_kg')), 
             output_field=DecimalField()
         )
     )
 
-    # 3. تطبيق منطق التصفية الزمني على كافة السجلات
+    # تطبيق الفلترة الزمنية
     if period == 'today':
         purchase_logs = purchase_logs.filter(date=today)
         payment_logs = payment_logs.filter(date_paid__date=today)
@@ -334,10 +332,9 @@ def admin_logs_dashboard(request):
         payment_logs = payment_logs.filter(date_paid__date__range=[start_date, end_date])
         profit_logs = profit_logs.filter(date__range=[start_date, end_date])
 
-    # 4. حساب إجمالي الأرباح للفترة المحددة
+    # حسابات الملخص المالي
     total_profit_period = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
 
-    # 5. حساب الإحصائيات العامة (الوضع الحالي)
     capital_obj = Capital.objects.first()
     cash_in_hand = capital_obj.initial_amount if capital_obj else Decimal(0)
 
@@ -358,9 +355,7 @@ def admin_logs_dashboard(request):
 
     total_capital = (cash_in_hand + total_inventory_value + receivable) - (payable + bank_remaining)
 
-    # 6. تمرير البيانات للـ Template
     context = {
-        # بيانات الإحصائيات (البطاقات العلوية)
         'cash_in_hand': cash_in_hand,
         'total_inventory_value': total_inventory_value,
         'total_capital': total_capital,
@@ -368,13 +363,9 @@ def admin_logs_dashboard(request):
         'payable': payable,
         'bank_remaining': bank_remaining,
         'total_profit_period': total_profit_period,
-        
-        # سجلات الجداول
         'purchase_logs': purchase_logs.order_by('-date'),
         'payment_logs': payment_logs.order_by('-date_paid')[:20],
         'profit_logs': profit_logs.order_by('-date'),
-        
-        # بيانات التصفية والوقت
         'today': today,
         'start_date': start_date,
         'end_date': end_date,

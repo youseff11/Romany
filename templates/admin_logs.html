@@ -113,7 +113,7 @@
                 </a>
             </div>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 custom-table">
+                <table class="table table-hover align-middle mb-0 custom-table text-center">
                     <thead>
                         <tr>
                             <th class="ps-4">التاريخ</th>
@@ -121,14 +121,14 @@
                             <th>المنتج</th>
                             <th>الوزن الصافي</th>
                             <th>سعر الكيلو</th>
-                            <th class="pe-4 text-center">إجمالي القيمة</th>
+                            <th class="pe-4">المدفوع / الإجمالي</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for log in purchase_logs %}
                         <tr>
                             <td class="ps-4">
-                                <div class="date-cell">
+                                <div class="date-cell mx-auto">
                                     <span class="day">{{ log.date|date:"d" }}</span>
                                     <span class="month">{{ log.date|date:"M" }}</span>
                                 </div>
@@ -140,8 +140,12 @@
                             <td><span class="product-badge">{{ log.product.name }}</span></td>
                             <td><span class="fw-600">{{ log.weight }}</span> <small class="text-muted">كجم</small></td>
                             <td><span class="text-secondary fw-bold">{{ log.price_per_kg }}</span> <small class="text-muted">ج.م</small></td>
-                            <td class="pe-4 text-center">
-                                <span class="total-price-tag">{{ log.total_price|floatformat:0 }}</span>
+                            <td class="pe-4">
+                                <div class="total-price-tag mx-auto">
+                                    <span class="text-white fw-800">{{ log.paid_amount|floatformat:0 }}</span>
+                                    <span class="mx-1" style="opacity: 0.7;">/</span>
+                                    <span class="small" style="font-size: 0.85em;">{{ log.total_price|floatformat:0 }}</span>
+                                </div>
                             </td>
                         </tr>
                         {% empty %}
@@ -168,15 +172,16 @@
                 </h5>
             </div>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 custom-table">
+                <table class="table table-hover align-middle mb-0 custom-table text-center">
                     <thead class="bg-light">
                         <tr>
                             <th class="ps-4">التاريخ</th>
                             <th>المنتج</th>
-                            <th>الوزن</th> <th>العميل</th>
-                            <th>سعر البيع</th>
+                            <th>الوزن</th> 
+                            <th>العميل</th>
+                            <th>المدفوع / الإجمالي</th>
                             <th>التكلفة (شراء)</th>
-                            <th class="pe-4 text-center">صافي الربح</th>
+                            <th class="pe-4">صافي الربح</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -184,10 +189,17 @@
                         <tr>
                             <td class="ps-4">{{ log.date|date:"d/m/Y" }}</td>
                             <td><span class="product-badge bg-info-light text-dark">{{ log.product.name }}</span></td>
-                            <td class="fw-bold text-primary">{{ log.weight }} <small class="text-muted small">كجم</small></td> <td>{{ log.contact.name }}</td>
-                            <td class="fw-bold text-dark">{{ log.total_price|floatformat:0 }} ج.م</td>
+                            <td class="fw-bold text-primary">{{ log.weight }} <small class="text-muted small">كجم</small></td> 
+                            <td>{{ log.contact.name }}</td>
+                            <td>
+                                <div class="fw-bold text-dark">
+                                    <span class="text-success">{{ log.paid_amount|floatformat:0 }}</span>
+                                    <span class="text-muted small mx-1">من</span>
+                                    <span>{{ log.total_price|floatformat:0 }}</span>
+                                </div>
+                            </td>
                             <td class="text-muted small">{{ log.cost_price|floatformat:0 }} ج.م</td>
-                            <td class="pe-4 text-center">
+                            <td class="pe-4">
                                 <span class="badge bg-success px-3 py-2 rounded-pill shadow-sm">
                                     + {{ log.unit_profit|floatformat:0 }} ج.م
                                 </span>
@@ -262,7 +274,7 @@
 
     .custom-table thead th { background-color: #f8f9fc; color: #4e73df; font-weight: 700; padding: 20px; border: none; }
     .date-cell { width: 50px; background: #f8f9fc; border-radius: 10px; padding: 5px; text-align: center; border: 1px solid #e3e6f0; }
-    .total-price-tag { background: #1cc88a; color: #fff; padding: 8px 15px; border-radius: 10px; font-weight: 800; }
+    .total-price-tag { background: #1cc88a; color: #fff; padding: 8px 15px; border-radius: 10px; font-weight: 800; width: fit-content; }
     .btn-primary-gradient { background: var(--primary-gradient); color: #fff; border: none; }
 
     @media print {
