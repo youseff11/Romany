@@ -1,0 +1,242 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<div class="admin-logs-container py-5">
+    
+    <div class="container-fluid mb-4 no-print">
+        <div class="row align-items-center bg-white p-4 rounded-4 shadow-sm border-0 border-start border-primary border-5 mx-1">
+            <div class="col-md-7">
+                <h2 class="fw-800 text-dark mb-1">
+                    <span class="text-primary"><i class="fas fa-chart-pie me-2"></i></span> التقرير المالي الشامل
+                </h2>
+                <p class="text-muted mb-0 d-none d-md-block">تحليل لحظي لتدفقات السيولة، المخزون، والديون القائمة وصافي قيمة العمل.</p>
+            </div>
+            <div class="col-md-5 text-md-end mt-3 mt-md-0">
+                <button onclick="window.print()" class="btn btn-outline-dark rounded-pill px-4 me-2">
+                    <i class="fas fa-print me-2"></i>طباعة PDF
+                </button>
+                <div class="date-badge d-inline-block">
+                    <i class="far fa-calendar-check me-2 text-primary"></i> {{ today|date:"l، d F Y" }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid mb-4 no-print">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-body bg-white p-3">
+                <form method="GET" action="" id="filterForm" class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold text-muted">من تاريخ</label>
+                        <input type="date" name="start_date" class="form-control rounded-pill border-light bg-light shadow-none" value="{{ start_date }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold text-muted">إلى تاريخ</label>
+                        <input type="date" name="end_date" class="form-control rounded-pill border-light bg-light shadow-none" value="{{ end_date }}">
+                    </div>
+                    <div class="col-md-4">
+                        <div class="btn-group w-100 rounded-pill overflow-hidden shadow-sm" role="group">
+                            <button type="submit" name="period" value="today" class="btn btn-filter btn-outline-primary btn-sm border-light py-2 {% if period == 'today' %}active{% endif %}">اليوم</button>
+                            <button type="submit" name="period" value="week" class="btn btn-filter btn-outline-primary btn-sm border-light py-2 {% if period == 'week' %}active{% endif %}">أسبوع</button>
+                            <button type="submit" name="period" value="month" class="btn btn-filter btn-outline-primary btn-sm border-light py-2 {% if period == 'month' %}active{% endif %}">شهر</button>
+                            <button type="submit" name="period" value="all" class="btn btn-filter btn-outline-primary btn-sm border-light py-2 {% if period == 'all' or not period %}active{% endif %}">الكل</button>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-dark w-100 rounded-pill py-2 shadow-sm fw-bold">
+                            <i class="fas fa-filter me-1"></i> تصفية
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid mb-5">
+        <div class="row g-4">
+            <div class="col-md-4 col-xl-2">
+                <div class="f-card f-card-cash shadow-sm">
+                    <div class="f-card-icon"><i class="fas fa-vault"></i></div>
+                    <div class="f-card-label">الخزنة (كاش)</div>
+                    <div class="f-card-value">{{ cash_in_hand|floatformat:0 }}<small>ج.م</small></div>
+                </div>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <div class="f-card f-card-inventory shadow-sm">
+                    <div class="f-card-icon"><i class="fas fa-boxes-stacked"></i></div>
+                    <div class="f-card-label">قيمة البضاعة</div>
+                    <div class="f-card-value text-white">{{ total_inventory_value|floatformat:0 }}<small>ج.م</small></div>
+                </div>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <div class="f-card f-card-receivable shadow-sm">
+                    <div class="f-card-icon"><i class="fas fa-arrow-down-long"></i></div>
+                    <div class="f-card-label">لينا عند الغير</div>
+                    <div class="f-card-value">{{ receivable|floatformat:0 }}<small>ج.م</small></div>
+                </div>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <div class="f-card f-card-payable shadow-sm">
+                    <div class="f-card-icon"><i class="fas fa-arrow-up-long"></i></div>
+                    <div class="f-card-label">علينا للتجار</div>
+                    <div class="f-card-value">{{ payable|floatformat:0 }}<small>ج.م</small></div>
+                </div>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <div class="f-card f-card-bank shadow-sm">
+                    <div class="f-card-icon"><i class="fas fa-university"></i></div>
+                    <div class="f-card-label">متبقي البنك</div>
+                    <div class="f-card-value">{{ bank_remaining|floatformat:0 }}<small>ج.م</small></div>
+                </div>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <div class="f-card f-card-net shadow-sm">
+                    <div class="f-card-icon"><i class="fas fa-gem"></i></div>
+                    <div class="f-card-label">صافي رأس المال</div>
+                    <div class="f-card-value text-white">{{ total_capital|floatformat:0 }}<small>ج.م</small></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="card-header bg-white py-4 px-4 d-flex justify-content-between align-items-center border-0">
+                <h5 class="mb-0 fw-bold text-dark fs-4">
+                    <i class="fas fa-receipt text-primary me-2"></i>سجل الوارد (المشتريات)
+                </h5>
+                <a href="/admin/store/dailytransaction/add/" class="btn btn-primary-gradient rounded-pill px-4 shadow-sm no-print">
+                    <i class="fas fa-plus-circle me-2"></i>إضافة فاتورة جديدة
+                </a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 custom-table">
+                    <thead>
+                        <tr>
+                            <th class="ps-4">التاريخ</th>
+                            <th>المورد (التاجر)</th>
+                            <th>المنتج</th>
+                            <th>الوزن الصافي</th>
+                            <th>سعر الكيلو</th>
+                            <th class="pe-4 text-center">إجمالي القيمة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in purchase_logs %}
+                        <tr>
+                            <td class="ps-4">
+                                <div class="date-cell">
+                                    <span class="day">{{ log.date|date:"d" }}</span>
+                                    <span class="month">{{ log.date|date:"M" }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-bold text-dark fs-6">{{ log.contact.name }}</div>
+                                <small class="text-muted"><i class="fas fa-user-tag me-1"></i> مورد معتمد</small>
+                            </td>
+                            <td><span class="product-badge">{{ log.product.name }}</span></td>
+                            <td><span class="fw-600">{{ log.weight }}</span> <small class="text-muted">كجم</small></td>
+                            <td><span class="text-secondary fw-bold">{{ log.price_per_kg }}</span> <small class="text-muted">ج.م</small></td>
+                            <td class="pe-4 text-center">
+                                <span class="total-price-tag">{{ log.total_price|floatformat:0 }}</span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-5">
+                                <div class="empty-state">
+                                    <i class="fas fa-folder-open mb-3"></i>
+                                    <p class="mb-0">لا توجد عمليات في المدى الزمني المحدد.</p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* الإعدادات والمتغيرات */
+    :root {
+        --primary-gradient: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+        --success-gradient: linear-gradient(135deg, #1cc88a 0%, #13855c 100%);
+        --bg-body: #f8f9fc;
+    }
+
+    body { font-family: 'Cairo', sans-serif; background-color: var(--bg-body); color: #4e5e6a; }
+    
+    /* ستايل زر الفلترة النشط */
+    .btn-filter.active {
+        background-color: #4e73df !important;
+        color: white !important;
+        border-color: #4e73df !important;
+        box-shadow: inset 0 3px 5px rgba(0,0,0,0.125);
+    }
+
+    /* تحسين حقول المدخلات */
+    .form-control:focus { border-color: #4e73df; box-shadow: none; background: #fff; }
+    .btn-outline-primary { color: #4e73df; border-color: #e3e6f0; }
+    .btn-outline-primary:hover { background: #4e73df; color: #fff; }
+
+    /* ستايل بطاقات التقارير */
+    .f-card {
+        padding: 25px 20px; border-radius: 20px; background: #fff;
+        position: relative; overflow: hidden; transition: all 0.4s ease;
+        border: none; display: flex; flex-direction: column; align-items: center; text-align: center;
+    }
+    .f-card-icon {
+        width: 50px; height: 50px; background: rgba(0,0,0,0.05); border-radius: 15px;
+        display: flex; align-items: center; justify-content: center; font-size: 1.5rem; margin-bottom: 15px;
+    }
+    .f-card-label { font-size: 0.85rem; font-weight: 600; color: #858796; margin-bottom: 5px; text-transform: uppercase; }
+    .f-card-value { font-size: 1.6rem; font-weight: 800; }
+    
+    /* ألوان البطاقات */
+    .f-card-cash { border-bottom: 5px solid #f6c23e; } .f-card-cash i { color: #f6c23e; }
+    .f-card-inventory { background: var(--success-gradient); color: #fff; } .f-card-inventory .f-card-label { color: rgba(255,255,255,0.8); }
+    .f-card-receivable { border-bottom: 5px solid #36b9cc; } .f-card-receivable i { color: #36b9cc; }
+    .f-card-payable { border-bottom: 5px solid #e74a3b; } .f-card-payable i { color: #e74a3b; }
+    .f-card-bank { border-bottom: 5px solid #858796; } .f-card-bank i { color: #858796; }
+    .f-card-net { background: var(--primary-gradient); color: #fff; } .f-card-net .f-card-label { color: rgba(255,255,255,0.8); }
+
+    /* ستايل الجدول */
+    .custom-table thead th { background-color: #f8f9fc; color: #4e73df; font-weight: 700; padding: 20px; border: none; }
+    .date-cell { width: 50px; background: #f8f9fc; border-radius: 10px; padding: 5px; text-align: center; border: 1px solid #e3e6f0; }
+    .total-price-tag { background: #1cc88a; color: #fff; padding: 8px 15px; border-radius: 10px; font-weight: 800; }
+    .btn-primary-gradient { background: var(--primary-gradient); color: #fff; border: none; }
+
+    /* إعدادات الطباعة */
+    @media print {
+        .no-print { display: none !important; }
+        body { background-color: white !important; }
+        .container-fluid { width: 100% !important; padding: 0 !important; }
+        .f-card { border: 1px solid #eee !important; box-shadow: none !important; break-inside: avoid; }
+        .card { box-shadow: none !important; border: 1px solid #eee !important; }
+        .f-card-inventory, .f-card-net { background: #f8f9fc !important; color: black !important; }
+        .f-card-inventory .f-card-label, .f-card-net .f-card-label, .f-card-inventory .f-card-value, .f-card-net .f-card-value { color: black !important; }
+        .total-price-tag { border: 1px solid #1cc88a !important; color: #13855c !important; background: none !important; }
+    }
+
+    @media (max-width: 768px) {
+        .f-card { margin-bottom: 10px; }
+    }
+</style>
+
+<script>
+    // جافا سكريبت للتأكد من بقاء التواريخ نشطة عند اختيار فترة محددة
+    document.querySelectorAll('.btn-filter').forEach(button => {
+        button.addEventListener('click', function() {
+            // إزالة الكلاس النشط من الجميع
+            document.querySelectorAll('.btn-filter').forEach(btn => btn.classList.remove('active'));
+            // إضافة النشط للزر المضغطوط
+            this.classList.add('active');
+        });
+    });
+</script>
+{% endblock %}

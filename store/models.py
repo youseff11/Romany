@@ -3,6 +3,8 @@ from django.contrib.auth.models import User
 from dateutil.relativedelta import relativedelta
 from django.db.models import Sum
 from django.utils import timezone
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 # --- 1. نظام التجار والشركاء ---
 class Contact(models.Model):
@@ -42,6 +44,8 @@ class DailyTransaction(models.Model):
     weight = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="الوزن")
     price_per_kg = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="السعر للكيلو")
     total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False, verbose_name="السعر المستحق الكلى")
+    # الحقل الجديد الذي طلبته
+    paid_amount_now = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="المبلغ المدفوع الآن")
     notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات")
 
     class Meta:
@@ -49,18 +53,34 @@ class DailyTransaction(models.Model):
         verbose_name_plural = "اليومية (وارد وصادر)"
 
     def save(self, *args, **kwargs):
-        # حساب السعر الكلي قبل الحفظ
+        # 1. حساب السعر الكلي
         self.total_price = self.weight * self.price_per_kg
         
-        # تحديث كمية المخزن
+        # 2. تحديث كمية المخزن (يتم عند الحفظ لأول مرة أو التعديل)
+        # ملاحظة: يفضل في المشاريع الكبيرة استخدام signals للمخزن، لكن سأبقيها هنا كما هي في كودك
         prod = self.product
-        if self.transaction_type == 'in':
-            prod.quantity_available += self.weight
-        else:
-            prod.quantity_available -= self.weight
-        prod.save()
+        if not self.pk: # إذا كانت حركة جديدة
+            if self.transaction_type == 'in':
+                prod.quantity_available += self.weight
+            else:
+                prod.quantity_available -= self.weight
+            prod.save()
         
         super().save(*args, **kwargs)
+
+        # 3. إنشاء أو تحديث السجل المالي تلقائياً
+        financial_rec, created = FinancialRecord.objects.get_or_create(transaction=self)
+        
+        # 4. إذا وضع المستخدم مبلغاً في "المدفوع الآن"، يتم تسجيله كدفعة سداد فورية
+        if self.paid_amount_now > 0:
+            # نتأكد أن الدفعة لم تسجل من قبل لتجنب التكرار عند تعديل الحركة
+            # سنقوم بإنشاء دفعة مرتبطة بهذا السجل المالي
+            PaymentInstallment.objects.create(
+                financial_record=financial_rec,
+                amount=self.paid_amount_now,
+                notes=f"دفع فوري عند تسجيل حركة {self.get_transaction_type_display()}"
+            )
+            # تصفير الحقل في الموديل بعد المعالجة إذا أردت، أو تركه كمرجع (يفضل تركه كمرجع)
 
 # --- 4. السجلات المالية للمبيعات والمشتريات ---
 class FinancialRecord(models.Model):
@@ -168,3 +188,30 @@ class BankInstallment(models.Model):
             self.actual_payment_date = timezone.now().date()
         
         super().save(*args, **kwargs)
+
+# --- 6. نظام إدارة رأس المال (الخزنة) ---
+class Capital(models.Model):
+    initial_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="رأس المال النقدي المتاح (الخزنة)")
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "إدارة رأس المال"
+        verbose_name_plural = "إدارة رأس المال"
+
+    def __str__(self):
+        return f"المبلغ المتاح حالياً: {self.initial_amount}"
+
+# --- 7. قسم السيجنالز (Signals) لتحديث الخزنة تلقائياً ---
+@receiver(post_save, sender=PaymentInstallment)
+def update_cash_on_payment(sender, instance, created, **kwargs):
+    """تحديث مبلغ الخزنة عند تسجيل أي عملية دفع أو قبض"""
+    if created:
+        capital = Capital.objects.first()
+        if capital:
+            # إذا كان صادر (خرج بضاعة) -> يعني قبضنا فلوس من عميل -> تزيد الخزنة
+            if instance.financial_record.transaction.transaction_type == 'out':
+                capital.initial_amount += instance.amount
+            # إذا كان وارد (دخل بضاعة) -> يعني دفعنا فلوس لتاجر -> تنقص الخزنة
+            else:
+                capital.initial_amount -= instance.amount
+            capital.save()

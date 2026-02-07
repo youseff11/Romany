@@ -1,9 +1,13 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>الروماني لإدارة اللب | نظام الإدارة المتكامل</title>
+
+    <link rel="icon" type="image/jpeg" href="/images/1.jpeg">
+    <link rel="shortcut icon" href="/images/1.jpeg">
     
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
@@ -26,12 +30,23 @@
         .navbar {
             background: linear-gradient(135deg, var(--primary-color) 0%, #1a252f 100%);
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 1rem 0;
+            padding: 0.8rem 0;
         }
 
         .navbar-brand {
             font-size: 1.5rem;
             letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* تنسيق اللوجو المستبدل */
+        .navbar-logo {
+            width: 35px;
+            height: 35px;
+            object-fit: cover;
+            border-radius: 5px; /* حواف دائرية خفيفة لتناسب التصميم */
+            margin-left: 10px;
         }
 
         .nav-link {
@@ -49,7 +64,7 @@
             border: none;
             border-radius: 10px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            max-height: 400px; /* لتجنب القوائم الطويلة جداً */
+            max-height: 400px;
             overflow-y: auto;
             text-align: right;
         }
@@ -101,7 +116,8 @@
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand fw-bold" href="{% url 'dashboard' %}">
-                <i class="fas fa-seedling me-2"></i> الروماني لإدارة اللب
+                <img src="/images/1.jpeg" alt="لوجو" class="navbar-logo">
+                الروماني للاستيراد والتصدير
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -144,6 +160,13 @@
                             </li>
                         </ul>
                     </li>
+                    {% if user.is_superuser %}
+                    <li class="nav-item">
+                        <a class="nav-link text-warning fw-bold" href="{% url 'admin_logs' %}">
+                            <i class="fas fa-user-lock me-1"></i> السجلات
+                        </a>
+                    </li>
+                    {% endif %}
 
                     <li class="nav-item border-start ms-2">
                         <a class="nav-link text-warning" href="/admin" target="_blank"><i class="fas fa-user-shield me-1"></i> الإدارة</a>

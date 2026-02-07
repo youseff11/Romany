@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     Contact, Product, DailyTransaction, FinancialRecord, 
-    PaymentInstallment, BankLoan, BankInstallment
+    PaymentInstallment, BankLoan, BankInstallment, Capital # تم إضافة Capital هنا
 )
 
 # --- 1. إعدادات أقساط الموردين والتجار (Inline) ---
@@ -24,6 +24,18 @@ class BankInstallmentInline(admin.TabularInline):
     verbose_name_plural = "جدول الأقساط الشهرية"
 
 # --- 3. تسجيل الموديلات في لوحة الإدارة ---
+
+@admin.register(Capital)
+class CapitalAdmin(admin.ModelAdmin):
+    list_display = ['display_amount', 'last_updated']
+    
+    def display_amount(self, obj):
+        return format_html('<b style="color: #28a745; font-size: 16px;">{} ج.م</b>', obj.initial_amount)
+    display_amount.short_description = 'المبلغ الحالي في الخزنة'
+
+    # لمنع إضافة أكثر من سجل واحد للخزنة (اختياري)
+    def has_add_permission(self, request):
+        return not Capital.objects.exists()
 
 @admin.register(BankLoan)
 class BankLoanAdmin(admin.ModelAdmin):
@@ -70,7 +82,7 @@ class FinancialRecordAdmin(admin.ModelAdmin):
     list_filter = ['transaction__transaction_type', 'transaction__date']
     search_fields = ['transaction__contact__name']
     inlines = [PaymentInstallmentInline]
-    readonly_fields = ['amount_paid'] # يُحسب تلقائياً من الأقساط
+    readonly_fields = ['amount_paid']
 
     def get_date(self, obj): return obj.transaction.date
     get_date.short_description = 'التاريخ'

@@ -3,7 +3,7 @@ from django.db.models import Sum, Prefetch, F, ExpressionWrapper, DecimalField
 from django.contrib.auth.decorators import login_required, user_passes_test
 from .models import (
     DailyTransaction, Product, FinancialRecord, PaymentInstallment, 
-    Contact, BankLoan, BankInstallment
+    Contact, BankLoan, BankInstallment, Capital
 )
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -172,21 +172,30 @@ def add_transaction_direct(request):
             price = Decimal(request.POST.get('price_per_kg'))
             t_type = request.POST.get('transaction_type')
             
+            # جلب المبلغ المدفوع الآن من الفورم
+            amount_paid_now = request.POST.get('amount_paid_now', '0')
+            paid_dec = Decimal(amount_paid_now)
+            
             if t_type == 'out':
                 product = get_object_or_404(Product, id=product_id)
                 if product.quantity_available < weight:
                     messages.error(request, f"الكمية غير كافية بالمخزن! المتاح: {product.quantity_available}")
                     return redirect(request.META.get('HTTP_REFERER'))
 
+            # إنشاء الحركة التجارية
+            # ملاحظة: بما أننا أضفنا حقل paid_amount_now للموديل، سيقوم الـ save() في الموديل
+            # بإنشاء الـ PaymentInstallment تلقائياً، فلا نحتاج لإنشائه يدوياً هنا.
             DailyTransaction.objects.create(
                 date=request.POST.get('date'),
                 transaction_type=t_type,
                 product_id=product_id,
                 contact_id=contact_id,
                 weight=weight,
-                price_per_kg=price
+                price_per_kg=price,
+                paid_amount_now=paid_dec  # نمرر القيمة للموديل ليقوم بالمعالجة
             )
-            messages.success(request, "تمت إضافة الحركة التجارية بنجاح.")
+
+            messages.success(request, "تمت إضافة العملية وتحديث السجلات المالية والخزنة بنجاح.")
         except Exception as e:
             messages.error(request, f"خطأ في البيانات المرسلة: {e}")
             
@@ -196,7 +205,6 @@ def add_transaction_direct(request):
 def update_paid_amount(request, record_id):
     """تعديل: تسجيل الدفعة مع تحديد النوع (قبض/صرف) تلقائياً"""
     if request.method == 'POST':
-        # إذا كان الـ record_id هو 0، فهذا يعني أننا نأخذه من حقل مخفي في المودال
         target_id = record_id if record_id != 0 else request.POST.get('record_id')
         payment_amount = request.POST.get('amount_paid')
         notes = request.POST.get('notes', '')
@@ -206,7 +214,6 @@ def update_paid_amount(request, record_id):
         try:
             amount_dec = Decimal(payment_amount)
             if amount_dec > 0:
-                # منطق تحديد اتجاه الدفعة للتوثيق
                 if record.transaction.transaction_type == 'out':
                     direction = "استلام نقدية (تحصيل من العميل)"
                 else:
@@ -275,3 +282,81 @@ def update_installment_charges(request, inst_id):
             except Exception as e:
                 messages.error(request, f"حدث خطأ: {str(e)}")
     return redirect('bank_statement')
+
+# --- 5. لوحة السجلات الإدارية (Admin Logs) ---
+
+@user_passes_test(lambda u: u.is_superuser)
+def admin_logs_dashboard(request):
+    # 1. جلب بارامترات التصفية من الرابط (GET Request)
+    period = request.GET.get('period', 'all')
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    today = timezone.now().date()
+
+    # تجهيز الكويري سيت الأساسية
+    purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact')
+    payment_logs = PaymentInstallment.objects.select_related(
+        'financial_record__transaction', 
+        'financial_record__transaction__contact'
+    )
+
+    # 2. تطبيق منطق التصفية الزمني
+    if period == 'today':
+        purchase_logs = purchase_logs.filter(date=today)
+        payment_logs = payment_logs.filter(date_paid__date=today)
+    elif period == 'week':
+        last_week = today - timedelta(days=7)
+        purchase_logs = purchase_logs.filter(date__gte=last_week)
+        payment_logs = payment_logs.filter(date_paid__date__gte=last_week)
+    elif period == 'month':
+        last_month = today - timedelta(days=30)
+        purchase_logs = purchase_logs.filter(date__gte=last_month)
+        payment_logs = payment_logs.filter(date_paid__date__gte=last_month)
+    # تصفية مدى زمني مخصص (من .. إلى)
+    elif start_date and end_date:
+        purchase_logs = purchase_logs.filter(date__range=[start_date, end_date])
+        payment_logs = payment_logs.filter(date_paid__date__range=[start_date, end_date])
+
+    # ترتيب النتائج بعد التصفية
+    purchase_logs = purchase_logs.order_by('-date')
+    payment_logs = payment_logs.order_by('-date_paid')[:20]
+
+    # 3. حساب الإحصائيات (تظل ثابتة للحظة الحالية أو يمكن تصفيتها حسب رغبتك)
+    # ملاحظة: عادة أرقام "الخزنة" و"رأس المال" تعبر عن الوضع "الآن" وليس مدى زمني
+    capital_obj = Capital.objects.first()
+    cash_in_hand = capital_obj.initial_amount if capital_obj else Decimal(0)
+
+    products = Product.objects.all()
+    total_inventory_value = sum(p.quantity_available * p.purchase_price_per_kg for p in products)
+
+    receivable = FinancialRecord.objects.filter(transaction__transaction_type='out').annotate(
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).aggregate(total=Sum('rem'))['total'] or 0
+
+    payable = FinancialRecord.objects.filter(transaction__transaction_type='in').annotate(
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).aggregate(total=Sum('rem'))['total'] or 0
+
+    loan = BankLoan.objects.filter(is_active=True).first()
+    bank_remaining = BankInstallment.objects.filter(loan=loan, is_paid=False).aggregate(
+        total=Sum('total_installment_amount'))['total'] or 0 if loan else 0
+
+    total_capital = (cash_in_hand + total_inventory_value + receivable) - (payable + bank_remaining)
+
+    # 4. تمرير البيانات للـ Template
+    context = {
+        'cash_in_hand': cash_in_hand,
+        'total_inventory_value': total_inventory_value,
+        'total_capital': total_capital,
+        'receivable': receivable,
+        'payable': payable,
+        'bank_remaining': bank_remaining,
+        'purchase_logs': purchase_logs,
+        'payment_logs': payment_logs,
+        'today': today,
+        # نرسل القيم المختارة لكي تظهر في حقول الإدخال بعد التحميل
+        'start_date': start_date,
+        'end_date': end_date,
+        'period': period,
+    }
+    return render(request, 'admin_logs.html', context)
