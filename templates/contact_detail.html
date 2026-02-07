@@ -8,12 +8,13 @@
     .premium-card { border: none; border-radius: 15px; transition: 0.3s; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
     .premium-card:hover { transform: translateY(-5px); }
     .icon-circle { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-    .table-wrapper { background: white; border-radius: 15px; overflow: hidden; border: 1px solid #edf2f7; }
+    .table-wrapper { background: white; border-radius: 15px; overflow: hidden; border: 1px solid #edf2f7; margin-bottom: 2rem; }
     .badge-soft { padding: 0.5em 1.2em; border-radius: 8px; font-weight: 700; font-size: 0.75rem; display: inline-block; }
     
     @media (max-width: 768px) {
         .page-header { text-align: center; flex-direction: column; }
-        .table { font-size: 0.85rem; }
+        .table { font-size: 0.8rem; }
+        .btn-action { width: 100%; margin-bottom: 5px; }
     }
     @media print { .no-print { display: none !important; } }
 </style>
@@ -21,78 +22,79 @@
 <div class="d-flex justify-content-between align-items-center mb-4 mt-3 flex-wrap gap-3 page-header">
     <div>
         <h3 class="fw-bold mb-0 text-dark"><i class="fas fa-user-circle text-primary me-2"></i> {{ contact.name }}</h3>
-        <small class="text-muted">كشف حساب مالي تفصيلي</small>
+        <div class="text-muted">
+            <i class="fas fa-phone-alt me-1 small"></i> {{ contact.phone|default:"لا يوجد رقم" }}
+            <span class="mx-2">|</span>
+            <small class="fw-bold text-primary">كشف حساب مالي تفصيلي</small>
+        </div>
     </div>
-    <button onclick="window.print()" class="btn btn-dark rounded-pill px-4 no-print shadow-sm">
-        <i class="fas fa-print me-2"></i> طباعة التقرير
-    </button>
+    <div class="d-flex gap-2 no-print flex-wrap justify-content-center">
+        {% if user.is_superuser %}
+        <button type="button" class="btn btn-success rounded-pill px-4 shadow-sm btn-action" data-bs-toggle="modal" data-bs-target="#addTransactionModal">
+            <i class="fas fa-plus-circle me-1"></i> إضافة حركة يومية
+        </button>
+        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm btn-action" data-bs-toggle="modal" data-bs-target="#addPaymentModal">
+            <i class="fas fa-hand-holding-usd me-1"></i> إضافة دفعة نقدية
+        </button>
+        {% endif %}
+        <button onclick="window.print()" class="btn btn-dark rounded-pill px-4 shadow-sm btn-action">
+            <i class="fas fa-print me-1"></i> طباعة
+        </button>
+    </div>
 </div>
 
 <div class="row g-3 mb-4">
     <div class="col-6 col-lg-3">
         <div class="premium-card p-3 h-100">
             <div class="icon-circle bg-primary bg-opacity-10 text-primary mb-2"><i class="fas fa-arrow-up"></i></div>
-            <small class="text-muted d-block fw-bold">إجمالي لنا</small>
-            <span class="fw-bold h5 mb-0">{{ total_out|floatformat:0 }}</span>
+            <small class="text-muted d-block fw-bold small">إجمالي لنا</small>
+            <span class="fw-bold h5 mb-0 text-primary">{{ total_out|floatformat:0 }}</span>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="premium-card p-3 h-100">
             <div class="icon-circle bg-danger bg-opacity-10 text-danger mb-2"><i class="fas fa-arrow-down"></i></div>
-            <small class="text-muted d-block fw-bold">إجمالي علينا</small>
-            <span class="fw-bold h5 mb-0">{{ total_in|floatformat:0 }}</span>
+            <small class="text-muted d-block fw-bold small">إجمالي علينا</small>
+            <span class="fw-bold h5 mb-0 text-danger">{{ total_in|floatformat:0 }}</span>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="premium-card p-3 h-100 border-start border-warning border-4">
             <div class="icon-circle bg-warning bg-opacity-10 text-warning mb-2"><i class="fas fa-wallet"></i></div>
-            <small class="text-muted d-block fw-bold">صافي المتبقي</small>
+            <small class="text-muted d-block fw-bold small">صافي المتبقي</small>
             <span class="fw-bold h5 mb-0">{{ total_remaining|floatformat:0 }}</span>
         </div>
     </div>
     <div class="col-6 col-lg-3">
-        {% if net_balance == 0 %}
-            <div class="premium-card p-3 h-100 bg-success text-white shadow">
-                <div class="icon-circle bg-white bg-opacity-20 mb-2"><i class="fas fa-check-double"></i></div>
-                <small class="text-white-50 d-block fw-bold">وضعية الحساب</small>
-                <span class="fw-bold h6 m-0">الحساب خالص</span>
+        <div class="premium-card p-3 h-100 {% if net_balance >= 0 %}bg-primary{% else %}bg-danger{% endif %} text-white shadow">
+            <div class="icon-circle bg-white bg-opacity-20 mb-2">
+                <i class="fas {% if net_balance >= 0 %}fa-arrow-trend-up{% else %}fa-arrow-trend-down{% endif %}"></i>
             </div>
-        {% else %}
-            <div class="premium-card p-3 h-100 {% if net_balance > 0 %}bg-primary{% else %}bg-danger{% endif %} text-white shadow">
-                <div class="icon-circle bg-white bg-opacity-20 mb-2">
-                    <i class="fas {% if net_balance > 0 %}fa-arrow-trend-up{% else %}fa-arrow-trend-down{% endif %}"></i>
-                </div>
-                <small class="text-white-50 d-block fw-bold">وضعية الحساب</small>
-                <span class="fw-bold h6 m-0">
-                    {% if net_balance > 0 %}
-                        لينا مبلغ {{ total_remaining|floatformat:0 }}
-                    {% else %}
-                        علينا مبلغ {{ total_remaining|floatformat:0 }}
-                    {% endif %}
-                </span>
-            </div>
-        {% endif %}
+            <small class="text-white-50 d-block fw-bold small">وضعية الحساب</small>
+            <span class="fw-bold h6 m-0">
+                {% if net_balance == 0 %}خالص{% elif net_balance > 0 %}لينا {{ total_remaining|floatformat:0 }}{% else %}علينا {{ total_remaining|floatformat:0 }}{% endif %}
+            </span>
+        </div>
     </div>
 </div>
 
-<div class="table-wrapper shadow-sm border-0">
-    <div class="p-3 bg-white border-bottom d-flex justify-content-between align-items-center">
-        <h6 class="fw-bold mb-0 text-secondary"><i class="fas fa-list me-2"></i> سجل المعاملات</h6>
-        <span class="badge bg-light text-dark rounded-pill">{{ transactions.count }} حركة</span>
+<div class="table-wrapper shadow-sm border-0 mb-5">
+    <div class="p-3 bg-white border-bottom">
+        <h6 class="fw-bold mb-0 text-secondary"><i class="fas fa-exchange-alt me-2"></i> سجل العمليات التجارية (البيع والشراء)</h6>
     </div>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="bg-light text-center">
+        <table class="table table-hover align-middle mb-0 text-center">
+            <thead class="bg-light">
                 <tr>
                     <th class="py-3 small text-muted">التاريخ</th>
                     <th class="py-3 small text-muted">النوع</th>
                     <th class="py-3 small text-muted">الصنف</th>
                     <th class="py-3 small text-muted">الإجمالي</th>
-                    <th class="py-3 small text-success">المدفوع</th>
+                    <th class="py-3 small text-success">إضافة دفعة</th>
                     <th class="py-3 small text-danger">المتبقي</th>
                 </tr>
             </thead>
-            <tbody class="text-center">
+            <tbody>
                 {% for t in transactions %}
                 <tr>
                     <td class="text-muted small">{{ t.date|date:"Y/m/d" }}</td>
@@ -103,33 +105,178 @@
                     </td>
                     <td class="fw-bold">{{ t.product.name }}</td>
                     <td class="fw-bold">{{ t.total_price|floatformat:0 }}</td>
-                    <td class="text-success fw-bold">
+                    <td>
                         {% if user.is_superuser %}
-                            <form action="{% url 'update_paid_amount' t.financialrecord.id %}" method="POST" class="d-flex align-items-center justify-content-center gap-1">
-                                {% csrf_token %}
-                                <input type="number" name="amount_paid" 
-                                    value="{{ t.financialrecord.amount_paid|floatformat:0 }}" 
-                                    class="form-control form-control-sm text-center fw-bold text-success border-0 bg-light" 
-                                    style="width: 80px;" onchange="this.form.submit()">
-                                <button type="submit" class="btn btn-sm text-primary p-0"><i class="fas fa-save small"></i></button>
-                            </form>
-                        {% else %}
-                            {{ t.financialrecord.amount_paid|default:0|floatformat:0 }}
+                        <form action="{% url 'update_paid_amount' t.financialrecord.id %}" method="POST" class="d-flex align-items-center justify-content-center gap-1">
+                            {% csrf_token %}
+                            <input type="number" name="amount_paid" class="form-control form-control-sm text-center border-success" style="width: 70px;" required>
+                            <button type="submit" class="btn btn-sm btn-success p-1"><i class="fas fa-plus-circle"></i></button>
+                        </form>
                         {% endif %}
                     </td>
-                    <td>
-                        {% if t.financialrecord.remaining_amount > 0 %}
-                            <span class="text-danger fw-bold">{{ t.financialrecord.remaining_amount|floatformat:0 }}</span>
-                        {% else %}
-                            <span class="text-success small fw-bold"><i class="fas fa-check me-1"></i>خالص</span>
-                        {% endif %}
+                    <td class="fw-bold {% if t.financialrecord.remaining_amount > 0 %}text-danger{% else %}text-success{% endif %}">
+                        {% if t.financialrecord.remaining_amount > 0 %}{{ t.financialrecord.remaining_amount|floatformat:0 }}{% else %}خالص{% endif %}
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6" class="py-5 text-muted">لا توجد معاملات مسجلة لهذا الاسم.</td></tr>
+                <tr><td colspan="6" class="py-4 text-muted">لا توجد عمليات مسجلة</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+
+<div class="table-wrapper shadow-sm border-0 border-top border-primary border-4">
+    <div class="p-3 bg-white border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-money-bill-wave me-2"></i> سجل الدفعات النقدية المستلمة/المدفوعة</h6>
+        <span class="badge bg-primary rounded-pill">إجمالي الدفعات: {{ payment_history.count }}</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0 text-center">
+            <thead class="table-primary text-white">
+                <tr>
+                    <th class="py-2 small">تاريخ الدفع</th>
+                    <th class="py-2 small">نوع الدفعة</th>
+                    <th class="py-2 small">المبلغ</th>
+                    <th class="py-2 small">مرتبط بعملية</th>
+                    <th class="py-2 small">ملاحظات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payment in payment_history %}
+                <tr>
+                    <td class="py-3 small text-muted">{{ payment.date_paid|date:"Y/m/d H:i" }}</td>
+                    <td>
+                        {% if payment.financial_record.transaction.transaction_type == 'in' %}
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">دفعنا له</span>
+                        {% else %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">استلمنا منه</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3 fw-bold text-success">+ {{ payment.amount|floatformat:0 }}</td>
+                    <td class="py-3">
+                        <small class="text-muted">
+                            {{ payment.financial_record.transaction.product.name }} 
+                            ({{ payment.financial_record.transaction.date|date:"d/m" }})
+                        </small>
+                    </td>
+                    <td class="py-3 small text-muted">{{ payment.notes|default:"---" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="py-4 text-muted small">لم يتم تسجيل أي دفعات نقدية بعد</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if user.is_superuser %}
+<div class="modal fade" id="addTransactionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+            <div class="modal-header bg-success text-white" style="border-radius: 20px 20px 0 0;">
+                <h5 class="modal-title fw-bold"><i class="fas fa-cart-plus me-2"></i> إضافة حركة جديدة لـ {{ contact.name }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{% url 'add_transaction_direct' %}" method="POST">
+                {% csrf_token %}
+                <input type="hidden" name="contact_id" value="{{ contact.id }}">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">تاريخ الحركة</label>
+                            <input type="date" name="date" class="form-control" value="{{ today|date:'Y-m-d' }}" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">نوع العملية</label>
+                            <select name="transaction_type" class="form-select" required>
+                                <option value="in">وارد (شراء منه)</option>
+                                <option value="out">صادر (بيع له)</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">المنتج</label>
+                            <select name="product_id" class="form-select" required>
+                                {% for p in products %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">الوزن (كيلو)</label>
+                            <input type="number" step="0.01" name="weight" class="form-control" placeholder="0.00" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">سعر الكيلو</label>
+                            <input type="number" step="0.01" name="price_per_kg" class="form-control" placeholder="0.00" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-3">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success rounded-pill px-4">حفظ العملية</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addPaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+            <div class="modal-header bg-primary text-white" style="border-radius: 20px 20px 0 0;">
+                <h5 class="modal-title fw-bold"><i class="fas fa-money-check-alt me-2"></i> تسجيل دفعة نقدية (كاش)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{% url 'update_paid_amount' 0 %}" id="paymentForm" method="POST">
+                {% csrf_token %}
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">اختر العملية المرتبطة لسداد مديونيتها</label>
+                        <select name="record_id" class="form-select" required id="recordSelect">
+                            <option value="" disabled selected>-- اختر العملية --</option>
+                            {% for t in transactions %}
+                                {% if t.financialrecord.remaining_amount > 0 %}
+                                <option value="{{ t.financialrecord.id }}">
+                                    {% if t.transaction_type == 'in' %}(علينا) مورد: {% else %}(لينا) عميل: {% endif %}
+                                    {{ t.product.name }} | متبقي: {{ t.financialrecord.remaining_amount|floatformat:0 }}
+                                </option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">المبلغ المدفوع</label>
+                        <input type="number" name="amount_paid" class="form-control form-control-lg text-center" placeholder="0.00" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">ملاحظات إضافية</label>
+                        <textarea name="notes" class="form-control" rows="2" placeholder="مثلاً: استلمت منه كاش في المحل..."></textarea>
+                    </div>
+                    <div class="alert alert-info py-2 small mb-0">
+                        <i class="fas fa-info-circle me-1"></i>
+                        سيقوم النظام بتحديد نوع الدفعة (وارد/صادر) تلقائياً بناءً على العملية المختارة.
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">حفظ الدفعة</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // تحديث رابط الـ Form عند تغيير الاختيار
+    document.getElementById('recordSelect').addEventListener('change', function() {
+        var recordId = this.value;
+        var form = document.getElementById('paymentForm');
+        // استبدال الرقم 0 في الرابط بالـ ID الفعلي
+        var baseUrl = "{% url 'update_paid_amount' 0 %}";
+        form.setAttribute('action', baseUrl.replace('0', recordId));
+    });
+</script>
+{% endif %}
+
 {% endblock %}

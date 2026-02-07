@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from dateutil.relativedelta import relativedelta
 from django.db.models import Sum
+from django.utils import timezone
 
 # --- 1. نظام التجار والشركاء ---
 class Contact(models.Model):
@@ -64,7 +65,7 @@ class DailyTransaction(models.Model):
 # --- 4. السجلات المالية للمبيعات والمشتريات ---
 class FinancialRecord(models.Model):
     transaction = models.OneToOneField(DailyTransaction, on_delete=models.CASCADE, verbose_name="الحركة المرتبطة")
-    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="المبلغ المدفوع")
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="إجمالي المبلغ المدفوع")
     
     @property
     def remaining_amount(self):
@@ -85,23 +86,23 @@ class FinancialRecord(models.Model):
 class PaymentInstallment(models.Model):
     financial_record = models.ForeignKey(FinancialRecord, on_delete=models.CASCADE, related_name="installments", verbose_name="السجل المالي")
     amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="قيمة الدفعة")
-    date_paid = models.DateField(auto_now_add=True, verbose_name="تاريخ الدفع")
-    notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات")
+    date_paid = models.DateTimeField(default=timezone.now, verbose_name="تاريخ ووقت الدفع")
+    notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات (مثل: طريقة الدفع)")
 
     class Meta:
         verbose_name = "دفعة سداد"
-        verbose_name_plural = "أقساط السداد"
+        verbose_name_plural = "سجل الدفعات التفصيلي"
+        ordering = ['-date_paid']
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # تحديث المبلغ المدفوع في السجل المالي تلقائياً عند إضافة قسط
+        # تحديث المبلغ المدفوع الإجمالي في السجل المالي تلقائياً
         record = self.financial_record
         total_installments = record.installments.aggregate(Sum('amount'))['amount__sum'] or 0
         record.amount_paid = total_installments
         record.save()
 
-# --- 5. نظام البنك (المعدل: حساب آلي شامل الرسوم والتقريب) ---
-
+# --- 5. نظام البنك (حساب آلي شامل الرسوم والتقريب) ---
 class BankLoan(models.Model):
     bank_name = models.CharField(max_length=200, verbose_name="اسم البنك")
     loan_type = models.CharField(max_length=100, default="قرض عادي", verbose_name="نوع القرض")
@@ -133,7 +134,6 @@ class BankLoan(models.Model):
                 BankInstallment.objects.create(
                     loan=self,
                     due_date=installment_date,
-                    # الإجمالي المبدئي (سيتم تحديثه في دالة save الخاصة بالقسط)
                     total_installment_amount=principal_per_month + interest_per_month,
                     interest_component=interest_per_month,
                     principal_component=principal_per_month,
@@ -165,7 +165,6 @@ class BankInstallment(models.Model):
         self.extra_charges = round(self.extra_charges)        
         self.total_installment_amount = self.principal_component + self.interest_component + self.extra_charges        
         if self.is_paid and not self.actual_payment_date:
-            from django.utils import timezone
             self.actual_payment_date = timezone.now().date()
         
         super().save(*args, **kwargs)

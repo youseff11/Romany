@@ -1,7 +1,10 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.db.models import Sum, Prefetch, F, ExpressionWrapper, DecimalField
 from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import DailyTransaction, Product, FinancialRecord, PaymentInstallment, Contact, BankLoan, BankInstallment 
+from .models import (
+    DailyTransaction, Product, FinancialRecord, PaymentInstallment, 
+    Contact, BankLoan, BankInstallment
+)
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -10,19 +13,13 @@ from django.contrib import messages
 from decimal import Decimal, InvalidOperation
 
 # --- 1. قسم الإشارات (Signals) ---
-
 @receiver(post_save, sender=DailyTransaction)
-def create_financial_record_and_installment(sender, instance, created, **kwargs):
+def create_financial_record(sender, instance, created, **kwargs):
+    """إنشاء سجل مالي تلقائي عند تسجيل أي حركة بيع أو شراء"""
     if created:
-        financial_record, created_fr = FinancialRecord.objects.get_or_create(transaction=instance)
-        PaymentInstallment.objects.create(
-            financial_record=financial_record,
-            amount=0,  
-            notes="سجل دفع آلي (قيد الانتظار)"
-        )
+        FinancialRecord.objects.get_or_create(transaction=instance)
 
 # --- 2. لوحة التحكم (Dashboard) ---
-
 @login_required
 def dashboard(request):
     period = request.GET.get('period', 'all')
@@ -129,34 +126,105 @@ def transactions_list(request):
 def contact_detail(request, pk):
     contact = get_object_or_404(Contact, pk=pk)
     transactions = DailyTransaction.objects.filter(contact=contact).select_related('product', 'financialrecord').order_by('-date')
+    
+    products = Product.objects.all()
+    today = timezone.now().date()
+    
+    # حساب الإجماليات
     total_out = transactions.filter(transaction_type='out').aggregate(Sum('total_price'))['total_price__sum'] or 0
     total_in = transactions.filter(transaction_type='in').aggregate(Sum('total_price'))['total_price__sum'] or 0
     
+    # حساب الصافي المتبقي
     balance_us, balance_them = 0, 0
     records = FinancialRecord.objects.filter(transaction__contact=contact)
     for record in records:
-        if record.transaction.transaction_type == 'out': balance_us += record.remaining_amount
-        else: balance_them += record.remaining_amount
+        if record.transaction.transaction_type == 'out': 
+            balance_us += record.remaining_amount
+        else: 
+            balance_them += record.remaining_amount
 
     net_balance = balance_us - balance_them
+    
+    payment_history = PaymentInstallment.objects.filter(
+        financial_record__transaction__contact=contact
+    ).select_related('financial_record__transaction__product', 'financial_record__transaction').order_by('-date_paid')
+
     context = {
-        'contact': contact, 'transactions': transactions, 'total_out': total_out,
-        'total_in': total_in, 'total_remaining': abs(net_balance), 'net_balance': net_balance,
+        'contact': contact, 
+        'transactions': transactions, 
+        'products': products,
+        'today': today,
+        'total_out': total_out,
+        'total_in': total_in, 
+        'total_remaining': abs(net_balance), 
+        'net_balance': net_balance,
+        'payment_history': payment_history,
     }
     return render(request, 'contact_detail.html', context)
 
 @user_passes_test(lambda u: u.is_superuser)
-def update_paid_amount(request, record_id):
+def add_transaction_direct(request):
     if request.method == 'POST':
-        new_amount = request.POST.get('amount_paid')
-        record = get_object_or_404(FinancialRecord, id=record_id)
         try:
-            record.amount_paid = new_amount
-            record.save()
-            messages.success(request, "تم تحديث المبلغ المدفوع بنجاح.")
+            contact_id = request.POST.get('contact_id')
+            product_id = request.POST.get('product_id')
+            weight = Decimal(request.POST.get('weight'))
+            price = Decimal(request.POST.get('price_per_kg'))
+            t_type = request.POST.get('transaction_type')
+            
+            if t_type == 'out':
+                product = get_object_or_404(Product, id=product_id)
+                if product.quantity_available < weight:
+                    messages.error(request, f"الكمية غير كافية بالمخزن! المتاح: {product.quantity_available}")
+                    return redirect(request.META.get('HTTP_REFERER'))
+
+            DailyTransaction.objects.create(
+                date=request.POST.get('date'),
+                transaction_type=t_type,
+                product_id=product_id,
+                contact_id=contact_id,
+                weight=weight,
+                price_per_kg=price
+            )
+            messages.success(request, "تمت إضافة الحركة التجارية بنجاح.")
         except Exception as e:
-            messages.error(request, f"حدث خطأ أثناء التحديث: {e}")
-    return redirect(request.META.get('HTTP_REFERER', 'dashboard'))
+            messages.error(request, f"خطأ في البيانات المرسلة: {e}")
+            
+    return redirect(request.META.get('HTTP_REFERER'))
+
+@user_passes_test(lambda u: u.is_superuser)
+def update_paid_amount(request, record_id):
+    """تعديل: تسجيل الدفعة مع تحديد النوع (قبض/صرف) تلقائياً"""
+    if request.method == 'POST':
+        # إذا كان الـ record_id هو 0، فهذا يعني أننا نأخذه من حقل مخفي في المودال
+        target_id = record_id if record_id != 0 else request.POST.get('record_id')
+        payment_amount = request.POST.get('amount_paid')
+        notes = request.POST.get('notes', '')
+        
+        record = get_object_or_404(FinancialRecord, id=target_id)
+        
+        try:
+            amount_dec = Decimal(payment_amount)
+            if amount_dec > 0:
+                # منطق تحديد اتجاه الدفعة للتوثيق
+                if record.transaction.transaction_type == 'out':
+                    direction = "استلام نقدية (تحصيل من العميل)"
+                else:
+                    direction = "دفع نقدية (سداد للمورد)"
+                
+                full_notes = f"{direction} - {notes}" if notes else direction
+
+                PaymentInstallment.objects.create(
+                    financial_record=record,
+                    amount=amount_dec,
+                    notes=full_notes
+                )
+                messages.success(request, f"تم بنجاح {direction} بمبلغ {amount_dec}")
+            else:
+                messages.warning(request, "يجب إدخال مبلغ أكبر من الصفر.")
+        except (InvalidOperation, ValueError):
+            messages.error(request, "خطأ: يرجى إدخال رقم صحيح للمبلغ.")
+    return redirect(request.META.get('HTTP_REFERER'))
 
 # --- 4. نظام كشف حساب البنك والأقساط ---
 
@@ -200,7 +268,6 @@ def update_installment_charges(request, inst_id):
             installment = get_object_or_404(BankInstallment, id=inst_id)
             try:
                 installment.extra_charges = Decimal(new_charges)
-                # ملاحظة: الموديل يقوم بتحديث total_installment_amount تلقائياً في دالة save
                 installment.save()
                 messages.success(request, f"تم تحديث الرسوم وإعادة احتساب إجمالي قسط شهر {installment.due_date.month}.")
             except (InvalidOperation, ValueError):
