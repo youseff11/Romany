@@ -2,181 +2,207 @@
 
 {% block content %}
 <style>
-    /* تحسينات التصميم المتجاوب */
-    .bank-header {
-        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-        color: white;
-        border-radius: 15px;
-        padding: 2rem;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    /* تحسينات التصميم العام */
+    :root {
+        --primary-dark: #1e293b;
+        --accent-blue: #3b82f6;
+        --success-emerald: #10b981;
+        --danger-rose: #f43f5e;
+        --warning-amber: #f59e0b;
     }
+
+    .bank-header {
+        background: var(--primary-dark);
+        background-image: radial-gradient(circle at 0% 0%, #3b82f6 0%, transparent 50%), 
+                          radial-gradient(circle at 100% 100%, #1e40af 0%, transparent 50%);
+        color: white;
+        border-radius: 24px;
+        padding: 2.5rem;
+        margin-bottom: 2.5rem;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+
     .info-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 1rem;
-        margin-top: 1.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1.25rem;
+        margin-top: 2rem;
     }
+
     .summary-card {
-        background: rgba(255, 255, 255, 0.15);
-        padding: 15px;
-        border-radius: 12px;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        transition: transform 0.3s ease;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 1.25rem;
+        border-radius: 18px;
+        backdrop-filter: blur(8px);
+        transition: all 0.3s ease;
     }
+
     .summary-card:hover {
         transform: translateY(-5px);
+        background: rgba(255, 255, 255, 0.12);
     }
+
+    .card-value { font-size: 1.5rem; font-weight: 800; }
+    .val-loan { color: #ffffff; }
+    .val-interest { color: #fbbf24; }
+    .val-total { color: #60a5fa; }
+    .val-paid { color: #34d399; }
+    .val-remaining { color: #fb7185; }
+
     .table-container {
         background: white;
-        border-radius: 15px;
+        border-radius: 20px;
         overflow: hidden;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
     }
+
+    .edit-trigger { 
+        cursor: pointer; 
+        color: var(--accent-blue); 
+        padding: 5px;
+        transition: 0.2s;
+    }
+    .edit-trigger:hover { color: #1d4ed8; transform: scale(1.2); }
+
+    /* حل مشكلة الكتابة في الـ Modal */
+    .modal { z-index: 1060 !important; }
+    .modal-backdrop { z-index: 1050 !important; }
     
-    /* ألوان حالات الدفع المخصصة */
-    .bg-success-soft { background-color: rgba(25, 135, 84, 0.1); border: 1px solid #198754; }
-    .bg-danger-soft { background-color: rgba(220, 53, 69, 0.1); border: 1px solid #dc3545; }
+    .bg-success-soft { background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .bg-danger-soft { background-color: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
 
-    /* تأثير الزرار للمسؤول */
-    .status-btn {
-        transition: all 0.2s ease;
-        display: inline-block;
-        text-decoration: none !important;
-    }
-    .status-btn:hover {
-        transform: scale(1.05);
-        filter: brightness(0.9);
-    }
-
-    /* تحسين الطباعة */
-    @media print {
-        .no-print { display: none !important; }
-        .bank-header { background: #1e3a8a !important; color: white !important; -webkit-print-color-adjust: exact; }
-    }
-
-    /* للهواتف الصغيرة */
-    @media (max-width: 576px) {
-        .bank-header { padding: 1rem; }
-        .info-grid { grid-template-columns: 1fr 1fr; }
-        .table-responsive { font-size: 0.85rem; }
-    }
+    @media print { .no-print { display: none !important; } }
 </style>
 
-<div class="container-fluid">
+<div class="container-fluid py-4">
     <div class="bank-header">
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4 text-center text-md-start">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center">
             <div>
-                <h2 class="fw-bold mb-1"><i class="fas fa-university me-2"></i> {{ loan.bank_name|default:"لا يوجد قرض نشط" }}</h2>
-                <p class="mb-0 opacity-75">خطة السداد والتحليل المالي للقرض</p>
+                <h1 class="display-6 fw-bold mb-1">
+                    <i class="fas fa-university me-2 text-info"></i> 
+                    {{ loan.bank_name|default:"لا يوجد قرض نشط" }}
+                </h1>
+                <p class="lead opacity-75 mb-0">خطة السداد والتحليل المالي للقرض</p>
             </div>
-            <div class="mt-3 mt-md-0">
-                <button onclick="window.print()" class="btn btn-light rounded-pill no-print shadow-sm">
-                    <i class="fas fa-print me-1"></i> طباعة التقرير
-                </button>
-            </div>
+            <button onclick="window.print()" class="btn btn-light btn-lg rounded-pill no-print mt-3 mt-md-0">
+                <i class="fas fa-print me-2"></i> طباعة التقرير
+            </button>
         </div>
 
         <div class="info-grid">
-            <div class="summary-card">
-                <small class="d-block opacity-75 text-uppercase">أصل القرض</small>
-                <span class="fs-5 fw-bold text-white">{{ loan.total_loan_amount|floatformat:0 }}</span>
+            <div class="summary-card text-center">
+                <div class="small opacity-75 mb-1">أصل القرض</div>
+                <div class="card-value val-loan">{{ loan.total_loan_amount|floatformat:0 }}</div>
             </div>
-            <div class="summary-card text-warning">
-                <small class="d-block opacity-75">إجمالي الفوائد</small>
-                <span class="fs-5 fw-bold">{{ summary.total_interest|floatformat:0 }}</span>
+            <div class="summary-card text-center">
+                <div class="small opacity-75 mb-1">إجمالي الفوائد</div>
+                <div class="card-value val-interest">{{ summary.total_interest|floatformat:0 }}</div>
             </div>
-            <div class="summary-card text-info">
-                <small class="d-block opacity-75">المبلغ الإجمالي</small>
-                <span class="fs-5 fw-bold">{{ summary.total_flow|floatformat:0 }}</span>
+            <div class="summary-card text-center">
+                <div class="small opacity-75 mb-1">إجمالي المبلغ</div>
+                <div class="card-value val-total">{{ summary.total_flow|floatformat:0 }}</div>
             </div>
-            <div class="summary-card text-success">
-                <small class="d-block opacity-75">تم دفعه</small>
-                <span class="fs-5 fw-bold">{{ summary.total_paid|floatformat:0 }}</span>
+            <div class="summary-card text-center">
+                <div class="small opacity-75 mb-1">تم دفعه</div>
+                <div class="card-value val-paid">{{ summary.total_paid|floatformat:0 }}</div>
             </div>
-            <div class="summary-card text-danger">
-                <small class="d-block opacity-75">المتبقي</small>
-                <span class="fs-5 fw-bold">{{ summary.total_remaining|floatformat:0 }}</span>
+            <div class="summary-card text-center">
+                <div class="small opacity-75 mb-1">المتبقي</div>
+                <div class="card-value val-remaining">{{ summary.total_remaining|floatformat:0 }}</div>
             </div>
         </div>
     </div>
 
     <div class="table-container mb-5">
-        <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
-            <h5 class="mb-0 fw-bold text-dark"><i class="fas fa-list-ol me-2 text-primary"></i>جدول تدفقات الأقساط</h5>
-            <span class="badge bg-primary rounded-pill">عدد الأقساط: {{ installments|length }}</span>
+        <div class="p-4 bg-white border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-list-ol me-2 text-primary"></i>جدول الأقساط</h5>
+            <span class="badge bg-dark rounded-pill">{{ installments|length }} قسط</span>
         </div>
         
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 text-center">
-                <thead class="table-light text-secondary">
+                <thead>
                     <tr>
                         <th class="py-3">تاريخ الاستحقاق</th>
-                        <th class="py-3">القسط الإجمالي</th>
+                        <th class="py-3">القسط</th>
                         <th class="py-3">الفائدة</th>
-                        <th class="py-3">أصل المبلغ</th>
-                        <th class="py-3">رسوم</th>
+                        <th class="py-3">الأصل</th>
+                        <th class="py-3">رسوم إضافية</th>
                         <th class="py-3">الحالة</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for inst in installments %}
-                    <tr {% if inst.is_paid %}class="table-light"{% endif %}>
+                    <tr {% if inst.is_paid %}class="bg-light opacity-75"{% endif %}>
                         <td class="fw-bold">{{ inst.due_date|date:"Y/m/d" }}</td>
-                        <td class="fw-bold text-dark">{{ inst.total_installment_amount|floatformat:0 }}</td>
+                        <td class="fw-bold">{{ inst.total_installment_amount|floatformat:0 }}</td>
                         <td class="text-primary">{{ inst.interest_component|floatformat:0 }}</td>
                         <td class="text-success">{{ inst.principal_component|floatformat:0 }}</td>
-                        <td class="text-muted">{{ inst.extra_charges|floatformat:0 }}</td>
+                        <td>
+                            <span class="text-muted">{{ inst.extra_charges|floatformat:0 }}</span>
+                            {% if user.is_superuser %}
+                                <i class="fas fa-edit edit-trigger ms-1" 
+                                   data-bs-toggle="modal" 
+                                   data-bs-target="#editCharges{{ inst.id }}"></i>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if user.is_superuser %}
-                                <a href="{% url 'toggle_installment_status' inst.id %}" 
-                                   class="status-btn" 
-                                   title="اضغط لتغيير الحالة">
+                                <a href="{% url 'toggle_installment_status' inst.id %}" class="text-decoration-none">
                                     {% if inst.is_paid %}
-                                        <span class="badge bg-success-soft text-success p-2 shadow-sm">
-                                            <i class="fas fa-check-circle me-1"></i> مدفوع
-                                        </span>
+                                        <span class="badge bg-success-soft px-3 py-2"><i class="fas fa-check-circle me-1"></i> مدفوع</span>
                                     {% else %}
-                                        <span class="badge bg-danger-soft text-danger p-2 shadow-sm">
-                                            <i class="fas fa-clock me-1"></i> معلق (تعديل)
-                                        </span>
+                                        <span class="badge bg-danger-soft px-3 py-2"><i class="fas fa-clock me-1"></i> معلق</span>
                                     {% endif %}
                                 </a>
                             {% else %}
-                                {% if inst.is_paid %}
-                                    <span class="badge bg-success-soft text-success p-2 opacity-75">
-                                        <i class="fas fa-check-circle me-1"></i> مدفوع
-                                    </span>
-                                {% else %}
-                                    <span class="badge bg-danger-soft text-danger p-2 opacity-75">
-                                        <i class="fas fa-clock me-1"></i> معلق
-                                    </span>
-                                {% endif %}
+                                <span class="badge {% if inst.is_paid %}bg-success-soft{% else %}bg-danger-soft{% endif %} px-3 py-2">
+                                    {% if inst.is_paid %}مدفوع{% else %}معلق{% endif %}
+                                </span>
                             {% endif %}
                         </td>
                     </tr>
                     {% empty %}
-                    <tr>
-                        <td colspan="6" class="py-5 text-muted">
-                            <i class="fas fa-exclamation-circle fa-2x mb-3 d-block"></i>
-                            لا توجد أقساط مسجلة لهذا القرض.
-                        </td>
-                    </tr>
+                    <tr><td colspan="6" class="py-5 text-muted">لا يوجد بيانات حالياً.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 
-    <div class="mt-4 no-print text-center pb-5">
+    <div class="text-center pb-5 no-print">
         {% if user.is_superuser %}
-            <a href="/admin/store/bankinstallment/add/" class="btn btn-primary px-5 py-2 rounded-pill shadow">
-                <i class="fas fa-plus-circle me-2"></i> إضافة أو تعديل يدوي (Admin)
+            <a href="/admin/store/bankinstallment/add/" class="btn btn-primary btn-lg px-5 rounded-pill shadow" style="background: var(--primary-dark);">
+                <i class="fas fa-plus-circle me-2"></i> إضافة قسط جديد
             </a>
-        {% else %}
-            <p class="text-muted small"><i class="fas fa-info-circle me-1"></i> تعديل البيانات متاح للمسؤولين فقط.</p>
         {% endif %}
     </div>
 </div>
+
+{% if user.is_superuser %}
+    {% for inst in installments %}
+    <div class="modal fade" id="editCharges{{ inst.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <form action="{% url 'update_installment_charges' inst.id %}" method="POST">
+                    {% csrf_token %}
+                    <div class="modal-header bg-light">
+                        <h6 class="modal-title fw-bold">تعديل رسوم القسط</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="small text-muted mb-2">القيمة الجديدة لشهر {{ inst.due_date|date:"m/Y" }}:</label>
+                        <input type="number" name="extra_charges" class="form-control form-control-lg" value="{{ inst.extra_charges }}" step="0.01" required autofocus>
+                    </div>
+                    <div class="modal-footer p-2 border-0">
+                        <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">حفظ البيانات</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% endif %}
+
 {% endblock %}

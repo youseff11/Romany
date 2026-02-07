@@ -21,7 +21,6 @@ urlpatterns = [
     
     # مسار تسجيل قسط بنكي جديد (اختياري إذا أردت صفحة مخصصة خارج الإدارة)
     path('bank/add-installment/', views.add_bank_installment, name='add_bank_installment'),
-    
-
+    path('bank/installment/update-charges/<int:inst_id>/', views.update_installment_charges, name='update_installment_charges'),
     path('bank/installment/toggle/<int:inst_id>/', views.toggle_installment_status, name='toggle_installment_status'),
 ]

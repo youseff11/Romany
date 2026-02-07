@@ -48,13 +48,17 @@ class DailyTransaction(models.Model):
         verbose_name_plural = "اليومية (وارد وصادر)"
 
     def save(self, *args, **kwargs):
+        # حساب السعر الكلي قبل الحفظ
         self.total_price = self.weight * self.price_per_kg
+        
+        # تحديث كمية المخزن
         prod = self.product
         if self.transaction_type == 'in':
             prod.quantity_available += self.weight
         else:
             prod.quantity_available -= self.weight
         prod.save()
+        
         super().save(*args, **kwargs)
 
 # --- 4. السجلات المالية للمبيعات والمشتريات ---
@@ -90,6 +94,7 @@ class PaymentInstallment(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
+        # تحديث المبلغ المدفوع في السجل المالي تلقائياً عند إضافة قسط
         record = self.financial_record
         total_installments = record.installments.aggregate(Sum('amount'))['amount__sum'] or 0
         record.amount_paid = total_installments
@@ -118,10 +123,7 @@ class BankLoan(models.Model):
         super().save(*args, **kwargs)
         
         if is_new:
-            # حساب إجمالي مبلغ الفائدة والتقريب
-            total_interest = (self.total_loan_amount * self.interest_rate_percentage) / 100
-            
-            # حساب نصيب الشهر وتقريبه لأقرب رقم صحيح لعدم ظهور كسور
+            total_interest = (self.total_loan_amount * self.interest_rate_percentage) / 100            
             principal_per_month = round(self.total_loan_amount / self.loan_period_months)
             interest_per_month = round(total_interest / self.loan_period_months)
             
@@ -131,7 +133,7 @@ class BankLoan(models.Model):
                 BankInstallment.objects.create(
                     loan=self,
                     due_date=installment_date,
-                    # القسط المبدئي (سيقوم موديل القسط بتحديثه فوراً عند الحفظ)
+                    # الإجمالي المبدئي (سيتم تحديثه في دالة save الخاصة بالقسط)
                     total_installment_amount=principal_per_month + interest_per_month,
                     interest_component=interest_per_month,
                     principal_component=principal_per_month,
@@ -158,12 +160,12 @@ class BankInstallment(models.Model):
         return f"قسط شهر {self.due_date.month} - {self.total_installment_amount}"
 
     def save(self, *args, **kwargs):
-        # 1. تقريب كافة القيم المالية لأقرب رقم صحيح قبل الحساب
         self.principal_component = round(self.principal_component)
         self.interest_component = round(self.interest_component)
-        self.extra_charges = round(self.extra_charges)
-        
-        # 2. تحديث الإجمالي ليشمل (الأصل + الفائدة + الرسوم) تلقائياً
-        self.total_installment_amount = self.principal_component + self.interest_component + self.extra_charges
+        self.extra_charges = round(self.extra_charges)        
+        self.total_installment_amount = self.principal_component + self.interest_component + self.extra_charges        
+        if self.is_paid and not self.actual_payment_date:
+            from django.utils import timezone
+            self.actual_payment_date = timezone.now().date()
         
         super().save(*args, **kwargs)
