@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>الروماني لإدارة اللب | نظام الإدارة المتكامل</title>
+    <title>الروماني للاستيراد والاستيراد</title>
 
     <link rel="icon" type="image/jpeg" href="static/images/1.jpeg">
     <link rel="shortcut icon" href="static/images/1.jpeg">
@@ -38,14 +38,25 @@
             letter-spacing: 1px;
             display: flex;
             align-items: center;
+            white-space: nowrap; /* لمنع التفاف النص */
         }
 
-        /* تنسيق اللوجو المستبدل */
+        /* تصغير الخط في الشاشات الصغيرة فقط */
+        @media (max-width: 576px) {
+            .navbar-brand {
+                font-size: 1.1rem; /* حجم أصغر للهواتف */
+            }
+            .navbar-logo {
+                width: 28px; /* تصغير اللوجو قليلاً ليتناسب مع الخط */
+                height: 28px;
+            }
+        }
+
         .navbar-logo {
             width: 35px;
             height: 35px;
             object-fit: cover;
-            border-radius: 5px; /* حواف دائرية خفيفة لتناسب التصميم */
+            border-radius: 5px;
             margin-left: 10px;
         }
 
@@ -103,10 +114,8 @@
             padding: 15px 20px;
         }
 
-        /* RTL Adjustments */
         .me-auto { margin-left: auto !important; margin-right: 0 !important; }
         
-        /* Custom Scrollbar for Dropdown */
         .dropdown-menu::-webkit-scrollbar { width: 5px; }
         .dropdown-menu::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
     </style>
@@ -116,7 +125,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand fw-bold" href="{% url 'dashboard' %}">
-                <img src="static/images/1.jpeg" alt="لوجو" class="navbar-logo">
+                <img src="{% static 'images/1.jpeg' %}" alt="لوجو" class="navbar-logo">
                 الروماني للاستيراد والتصدير
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
