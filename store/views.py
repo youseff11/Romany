@@ -3,7 +3,7 @@ from django.db.models import Sum, Prefetch, F, ExpressionWrapper, DecimalField
 from django.contrib.auth.decorators import login_required, user_passes_test
 from .models import (
     DailyTransaction, Product, FinancialRecord, PaymentInstallment, 
-    Contact, BankLoan, BankInstallment, Capital
+    Contact, BankLoan, BankInstallment, Capital, HomeExpense # تم إضافة HomeExpense
 )
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -172,7 +172,6 @@ def add_transaction_direct(request):
             price = Decimal(request.POST.get('price_per_kg'))
             t_type = request.POST.get('transaction_type')
             
-            # 1. جلب المبلغ المدفوع الآن من الفورم (القيمة الافتراضية 0)
             amount_paid_now = request.POST.get('amount_paid_now', '0')
             paid_dec = Decimal(amount_paid_now) if amount_paid_now else Decimal(0)
             
@@ -182,7 +181,6 @@ def add_transaction_direct(request):
                     messages.error(request, f"الكمية غير كافية بالمخزن! المتاح: {product.quantity_available}")
                     return redirect(request.META.get('HTTP_REFERER'))
 
-            # 2. إنشاء الحركة التجارية مع تمرير المبلغ المدفوع
             DailyTransaction.objects.create(
                 date=request.POST.get('date'),
                 transaction_type=t_type,
@@ -289,7 +287,7 @@ def admin_logs_dashboard(request):
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
-    # 1. سجل المشتريات (الوارد) - مع جلب المبلغ المدفوع
+    # 1. سجل المشتريات والمدفوعات
     purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact', 'financialrecord').annotate(
         paid_amount=F('financialrecord__amount_paid')
     )
@@ -299,9 +297,9 @@ def admin_logs_dashboard(request):
         'financial_record__transaction__contact'
     )
 
-    # 2. سجل الأرباح (المبيعات) - تم إضافة annotate لجلب المبلغ المدفوع (paid_amount)
+    # 2. سجل الأرباح (المبيعات)
     profit_logs = DailyTransaction.objects.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').annotate(
-        paid_amount=F('financialrecord__amount_paid'), # الحقل المضاف ليظهر في القالب
+        paid_amount=F('financialrecord__amount_paid'),
         cost_price=ExpressionWrapper(
             F('weight') * F('product__purchase_price_per_kg'), 
             output_field=DecimalField()
@@ -312,28 +310,39 @@ def admin_logs_dashboard(request):
         )
     )
 
-    # تطبيق الفلترة الزمنية
+    # 3. سجل مصاريف البيت (الجزء الجديد)
+    home_expenses = HomeExpense.objects.all()
+
+    # تطبيق الفلترة الزمنية على الجميع بما فيهم مصاريف البيت
     if period == 'today':
         purchase_logs = purchase_logs.filter(date=today)
         payment_logs = payment_logs.filter(date_paid__date=today)
         profit_logs = profit_logs.filter(date=today)
+        home_expenses = home_expenses.filter(date=today)
     elif period == 'week':
         last_week = today - timedelta(days=7)
         purchase_logs = purchase_logs.filter(date__gte=last_week)
         payment_logs = payment_logs.filter(date_paid__date__gte=last_week)
         profit_logs = profit_logs.filter(date__gte=last_week)
+        home_expenses = home_expenses.filter(date__gte=last_week)
     elif period == 'month':
         last_month = today - timedelta(days=30)
         purchase_logs = purchase_logs.filter(date__gte=last_month)
         payment_logs = payment_logs.filter(date_paid__date__gte=last_month)
         profit_logs = profit_logs.filter(date__gte=last_month)
+        home_expenses = home_expenses.filter(date__gte=last_month)
     elif start_date and end_date:
         purchase_logs = purchase_logs.filter(date__range=[start_date, end_date])
         payment_logs = payment_logs.filter(date_paid__date__range=[start_date, end_date])
         profit_logs = profit_logs.filter(date__range=[start_date, end_date])
+        home_expenses = home_expenses.filter(date__range=[start_date, end_date])
 
     # حسابات الملخص المالي
-    total_profit_period = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
+    total_sales_profit = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
+    total_home_expenses = home_expenses.aggregate(total=Sum('amount'))['total'] or 0
+    
+    # صافي الربح للفترة (أرباح البيع - مصاريف البيت)
+    net_profit_period = total_sales_profit - total_home_expenses
 
     capital_obj = Capital.objects.first()
     cash_in_hand = capital_obj.initial_amount if capital_obj else Decimal(0)
@@ -362,10 +371,13 @@ def admin_logs_dashboard(request):
         'receivable': receivable,
         'payable': payable,
         'bank_remaining': bank_remaining,
-        'total_profit_period': total_profit_period,
+        'total_profit_period': total_sales_profit, # إجمالي أرباح التجارة
+        'total_home_expenses': total_home_expenses, # إجمالي المصاريف الشخصية
+        'net_profit_period': net_profit_period,    # الصافي النهائي
         'purchase_logs': purchase_logs.order_by('-date'),
         'payment_logs': payment_logs.order_by('-date_paid')[:20],
         'profit_logs': profit_logs.order_by('-date'),
+        'home_expenses': home_expenses.order_by('-date'), # إرسال المصاريف للقالب
         'today': today,
         'start_date': start_date,
         'end_date': end_date,

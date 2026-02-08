@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     Contact, Product, DailyTransaction, FinancialRecord, 
-    PaymentInstallment, BankLoan, BankInstallment, Capital # تم إضافة Capital هنا
+    PaymentInstallment, BankLoan, BankInstallment, Capital, HomeExpense # تم إضافة HomeExpense
 )
 
 # --- 1. إعدادات أقساط الموردين والتجار (Inline) ---
@@ -25,6 +25,18 @@ class BankInstallmentInline(admin.TabularInline):
 
 # --- 3. تسجيل الموديلات في لوحة الإدارة ---
 
+@admin.register(HomeExpense)
+class HomeExpenseAdmin(admin.ModelAdmin):
+    list_display = ['date', 'description', 'display_amount']
+    list_filter = ['date']
+    search_fields = ['description']
+    date_hierarchy = 'date'
+
+    def display_amount(self, obj):
+        # تمييز مبلغ المصروف باللون البرتقالي/الأحمر لأنه خصم من الخزنة
+        return format_html('<b style="color: #e67e22; font-size: 14px;">{} ج.م</b>', obj.amount)
+    display_amount.short_description = 'المبلغ المستهلك'
+
 @admin.register(Capital)
 class CapitalAdmin(admin.ModelAdmin):
     list_display = ['display_amount', 'last_updated']
@@ -33,7 +45,7 @@ class CapitalAdmin(admin.ModelAdmin):
         return format_html('<b style="color: #28a745; font-size: 16px;">{} ج.م</b>', obj.initial_amount)
     display_amount.short_description = 'المبلغ الحالي في الخزنة'
 
-    # لمنع إضافة أكثر من سجل واحد للخزنة (اختياري)
+    # لمنع إضافة أكثر من سجل واحد للخزنة
     def has_add_permission(self, request):
         return not Capital.objects.exists()
 

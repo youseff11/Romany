@@ -6,6 +6,8 @@ from django.utils import timezone
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
+# --- الموديلات الحالية (بدون تغيير) ---
+
 class Contact(models.Model):
     name = models.CharField(max_length=200, verbose_name="اسم التاجر")
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="رقم التليفون")
@@ -185,6 +187,23 @@ class Capital(models.Model):
     def __str__(self):
         return f"المبلغ المتاح حالياً: {self.initial_amount}"
 
+# --- الجزء الجديد: مصروف البيت ---
+
+class HomeExpense(models.Model):
+    date = models.DateField(default=timezone.now, verbose_name="التاريخ")
+    description = models.CharField(max_length=255, verbose_name="البيان (وصف المصروف)")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="المبلغ")
+
+    class Meta:
+        verbose_name = "مصروف بيت"
+        verbose_name_plural = "مصاريف البيت"
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.description} - {self.amount}"
+
+# --- السيجنالز (Signals) لتحديث الخزنة ---
+
 @receiver(post_save, sender=PaymentInstallment)
 def update_cash_on_payment(sender, instance, created, **kwargs):
     if created:
@@ -204,4 +223,20 @@ def update_cash_on_delete(sender, instance, **kwargs):
             capital.initial_amount -= instance.amount
         else:
             capital.initial_amount += instance.amount
+        capital.save()
+
+# سيجنال لتحديث الخزنة عند إضافة أو حذف مصروف بيت
+@receiver(post_save, sender=HomeExpense)
+def update_cash_on_home_expense(sender, instance, created, **kwargs):
+    if created:
+        capital = Capital.objects.first()
+        if capital:
+            capital.initial_amount -= instance.amount
+            capital.save()
+
+@receiver(post_delete, sender=HomeExpense)
+def restore_cash_on_delete_expense(sender, instance, **kwargs):
+    capital = Capital.objects.first()
+    if capital:
+        capital.initial_amount += instance.amount
         capital.save()
