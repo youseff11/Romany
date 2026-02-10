@@ -180,6 +180,8 @@
                             <th class="ps-4">التاريخ</th>
                             <th>المنتج</th>
                             <th>العميل</th>
+                            <th class="d-none d-md-table-cell">الوزن</th>
+                            <th class="d-none d-md-table-cell">إجمالي المبلغ</th>
                             <th class="d-none d-md-table-cell">المدفوع</th>
                             <th class="pe-4">صافي الربح</th>
                         </tr>
@@ -190,6 +192,8 @@
                             <td class="ps-4">{{ log.date|date:"d/m" }}</td>
                             <td><span class="product-badge bg-info-light">{{ log.product.name }}</span></td>
                             <td><div class="small">{{ log.contact.name }}</div></td>
+                            <td class="d-none d-md-table-cell"><span class="fw-600">{{ log.weight }}</span> <small class="text-muted">كجم</small></td>
+                            <td class="d-none d-md-table-cell text-muted fw-bold">{{ log.total_price|floatformat:0 }}</td>
                             <td class="d-none d-md-table-cell text-success fw-bold">{{ log.paid_amount|floatformat:0 }}</td>
                             <td class="pe-4">
                                 <span class="badge bg-success px-2 py-2 rounded-pill shadow-sm small">
@@ -198,7 +202,7 @@
                             </td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="5" class="py-4 text-muted">لا توجد بيانات</td></tr>
+                        <tr><td colspan="7" class="py-4 text-muted">لا توجد بيانات</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -284,7 +288,6 @@
     .f-card-label { font-size: 0.75rem; font-weight: 700; color: #a7aac3; margin-bottom: 3px; }
     .f-card-value { font-size: 1.25rem; font-weight: 800; }
     
-    /* Mobile Tablet Adjustments */
     @media (min-width: 768px) {
         .f-card { padding: 25px 20px; border-radius: 20px; }
         .f-card-icon { width: 50px; height: 50px; font-size: 1.5rem; }
