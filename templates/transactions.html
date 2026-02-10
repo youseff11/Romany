@@ -1,117 +1,203 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<style>
+    :root {
+        --primary-grad: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        --danger-grad: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
+        --success-grad: linear-gradient(135deg, #065f46 0%, #10b981 100%);
+        --info-grad: linear-gradient(135deg, #0e7490 0%, #06b6d4 100%);
+        --dark-grad: linear-gradient(135deg, #111827 0%, #374151 100%);
+    }
+
+    .stat-card {
+        border: none;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border-radius: 1.25rem;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px     rgba(0,0,0,0.1) !important;
+    }
+
+    .glass-effect {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .table thead th {
+        background-color: #f8fafc;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        color: #64748b;
+        border-top: none;
+    }
+
+    .badge-custom {
+        padding: 0.5em 1em;
+        font-weight: 600;
+        border-radius: 8px;
+    }
+
+    .table-hover tbody tr {
+        transition: all 0.2s ease;
+    }
+
+    .row-in { background-color: #f0f9ff !important; }
+    .row-out { background-color: #fffbeb !important; }
+</style>
+
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
-    <h2 class="fw-bold text-dark m-0"><i class="fas fa-history text-primary me-2"></i> سجل الحركة اليومية</h2>
-    <div class="btn-group shadow-sm w-100 w-md-auto">
-        <button onclick="window.print()" class="btn btn-outline-secondary bg-white flex-fill">
-            <i class="fas fa-print me-1"></i> طباعة
+    <div>
+        <h2 class="fw-black text-dark m-0 d-flex align-items-center">
+            <span class="p-2 bg-primary text-white rounded-3 me-3 shadow-sm">
+                <i class="fas fa-chart-line"></i>
+            </span>
+            سجل الحركة الشامل
+        </h2>
+        <p class="text-muted small m-0 mt-1">تتبع كافة العمليات المالية والتجارية في مكان واحد</p>
+    </div>
+    
+    <div class="btn-group shadow-sm">
+        <button onclick="window.print()" class="btn btn-white border-0 fw-bold px-3 shadow-sm">
+            <i class="fas fa-print text-secondary me-2"></i> طباعة
         </button>
-        <a href="/admin/store/dailytransaction/add/" class="btn btn-primary flex-fill">
-            <i class="fas fa-plus me-1"></i> إضافة حركة
+        <a href="/admin/store/dailytransaction/add/" class="btn btn-primary fw-bold px-4 shadow-sm">
+            <i class="fas fa-plus-circle me-2"></i> إضافة عملية
         </a>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm rounded-4 mb-4">
-    <div class="card-body py-3">
-        <form method="GET" class="row g-3 align-items-end">
-            <div class="col-12 col-md-4">
-                <label class="small text-muted mb-2 fw-bold"><i class="fas fa-filter me-1"></i> عرض حركة فترة:</label>
-                <select name="period" class="form-select border-0 bg-light rounded-3" onchange="this.form.submit()">
-                    <option value="all" {% if request.GET.period == 'all' %}selected{% endif %}>طوال الوقت</option>
-                    <option value="today" {% if request.GET.period == 'today' %}selected{% endif %}>حركة اليوم</option>
-                    <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>آخر أسبوع</option>
-                    <option value="month" {% if request.GET.period == 'month' %}selected{% endif %}>آخر شهر</option>
-                    <option value="custom" {% if request.GET.period == 'custom' %}selected{% endif %}>تاريخ محدد...</option>
-                </select>
+<div class="row g-3 mb-4 print-hide">
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card shadow-sm h-100" style="background: var(--primary-grad);">
+            <div class="card-body p-4 text-white">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-arrow-up fa-lg"></i></div>
+                    <span class="small opacity-75 fw-bold">المبيعات</span>
+                </div>
+                <h3 class="fw-bold mb-0" id="total-sales-val">0</h3>
             </div>
-            
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card shadow-sm h-100" style="background: var(--info-grad);">
+            <div class="card-body p-4 text-white">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-shopping-cart fa-lg"></i></div>
+                    <span class="small opacity-75 fw-bold">المشتريات</span>
+                </div>
+                <h3 class="fw-bold mb-0" id="total-purchase-val">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card shadow-sm h-100" style="background: var(--danger-grad);">
+            <div class="card-body p-4 text-white">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-wallet fa-lg"></i></div>
+                    <span class="small opacity-75 fw-bold">المصروفات</span>
+                </div>
+                <h3 class="fw-bold mb-0" id="total-expenses-val">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card stat-card shadow-sm h-100" style="background: var(--dark-grad);">
+            <div class="card-body p-4 text-white">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-balance-scale fa-lg"></i></div>
+                    <span class="small opacity-75 fw-bold">صافي السيولة</span>
+                </div>
+                <h3 class="fw-bold mb-0" id="net-cash-val">0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm glass-effect rounded-4 mb-4">
+    <div class="card-body p-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-12 col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-0 text-muted fw-bold small"><i class="fas fa-calendar-alt me-2"></i> الفترة:</span>
+                    <select name="period" class="form-select border-0 bg-light rounded-3" onchange="this.form.submit()">
+                        <option value="today" {% if request.GET.period == 'today' or not request.GET.period %}selected{% endif %}>اليوم</option>
+                        <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>الأسبوع الحالي</option>
+                        <option value="month" {% if request.GET.period == 'month' %}selected{% endif %}>الشهر الحالي</option>
+                        <option value="all" {% if request.GET.period == 'all' %}selected{% endif %}>كل الأوقات</option>
+                        <option value="custom" {% if request.GET.period == 'custom' %}selected{% endif %}>تحديد يدوي...</option>
+                    </select>
+                </div>
+            </div>
             {% if request.GET.period == 'custom' %}
             <div class="col-6 col-md-3">
-                <label class="small text-muted mb-2 fw-bold">من تاريخ:</label>
                 <input type="date" name="start_date" value="{{ request.GET.start_date }}" class="form-control border-0 bg-light rounded-3">
             </div>
             <div class="col-6 col-md-3">
-                <label class="small text-muted mb-2 fw-bold">إلى تاريخ:</label>
                 <input type="date" name="end_date" value="{{ request.GET.end_date }}" class="form-control border-0 bg-light rounded-3">
             </div>
             <div class="col-12 col-md-2">
-                <button type="submit" class="btn btn-dark w-100 rounded-3">تطبيق</button>
+                <button type="submit" class="btn btn-dark w-100 fw-bold rounded-3">تحديث</button>
             </div>
             {% endif %}
         </form>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm overflow-hidden rounded-4">
+<div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden">
     <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
-        <h5 class="m-0 fw-bold text-dark fs-6 fs-md-5">كشف الوارد والصادر والمستحقات</h5>
-        <span class="badge bg-primary rounded-pill">العدد: {{ transactions|length }}</span>
+        <h6 class="m-0 fw-bold text-dark"><i class="fas fa-exchange-alt text-primary me-2"></i> كشف العمليات التجارية</h6>
+        <span class="badge bg-light text-dark border fw-bold">{{ transactions|length }} عملية</span>
     </div>
-
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle m-0">
-                <thead class="bg-primary text-white text-center">
+            <table class="table table-hover align-middle mb-0 text-center" id="trading-table">
+                <thead>
                     <tr>
-                        <th class="py-3 border-0 text-nowrap">التاريخ</th>
-                        <th class="py-3 border-0 text-nowrap">الحركة</th>
-                        <th class="py-3 border-0 text-nowrap">الصنف</th>
-                        <th class="py-3 border-0 text-nowrap">التاجر</th>
-                        <th class="py-3 border-0 text-nowrap">الوزن</th>
-                        <th class="py-3 border-0 text-nowrap">الإجمالي</th>
-                        <th class="py-3 border-0 text-nowrap">المدفوع</th>
-                        <th class="py-3 border-0 text-nowrap text-warning">المتبقي</th>
+                        <th class="py-3">التاريخ</th>
+                        <th class="py-3">النوع</th>
+                        <th class="py-3 text-start">الصنف والتاجر</th>
+                        <th class="py-3">الوزن</th>
+                        <th class="py-3">المبلغ</th>
+                        <th class="py-3">المتبقي</th>
+                        <th class="py-3 print-hide"><i class="fas fa-ellipsis-v"></i></th>
                     </tr>
                 </thead>
-                <tbody class="text-center">
+                <tbody>
                     {% for t in transactions %}
-                    <tr class="{% if t.transaction_type == 'in' %}table-light-blue{% else %}table-light-orange{% endif %}">
-                        <td class="text-nowrap small fw-bold text-muted">{{ t.date|date:"Y-m-d" }}</td>
-                        <td class="text-nowrap">
+                    <tr class="{% if t.transaction_type == 'in' %}row-in{% else %}row-out{% endif %}" 
+                        data-type="{{ t.transaction_type }}" data-total="{{ t.total_price|floatformat:0 }}">
+                        <td class="small text-muted fw-bold">{{ t.date|date:"d/m/Y" }}</td>
+                        <td>
                             {% if t.transaction_type == 'in' %}
-                                <span class="badge rounded-pill px-3 py-2 bg-info-subtle text-info border border-info-subtle">
-                                    <i class="fas fa-arrow-down me-1"></i> وارد
-                                </span>
+                                <span class="badge-custom bg-info-subtle text-info border border-info-subtle small">وارد</span>
                             {% else %}
-                                <span class="badge rounded-pill px-3 py-2 bg-warning-subtle text-warning-emphasis border border-warning-subtle">
-                                    <i class="fas fa-arrow-up me-1"></i> صادر
-                                </span>
+                                <span class="badge-custom bg-warning-subtle text-warning-emphasis border border-warning-subtle small">صادر</span>
                             {% endif %}
                         </td>
-                        <td class="fw-bold text-nowrap">{{ t.product.name }}</td>
-                        <td class="text-nowrap">
-                            <span class="text-dark small"><i class="far fa-user me-1"></i> {{ t.contact.name|truncatechars:15 }}</span>
+                        <td class="text-start">
+                            <div class="fw-bold text-dark">{{ t.product.name }}</div>
+                            <div class="small text-muted"><i class="fas fa-user-circle me-1"></i>{{ t.contact.name }}</div>
                         </td>
-                        <td class="text-nowrap">
-                            <span class="fw-medium">{{ t.weight }} <small>كجم</small></span>
-                        </td>
-                        <td class="fw-bold text-nowrap">{{ t.total_price }} <small>ج.م</small></td>
-                        
-                        <td class="text-success text-nowrap">
-                            {{ t.financialrecord.amount_paid|default:"0.00" }}
-                        </td>
-
-                        <td class="text-nowrap">
+                        <td><span class="fw-bold">{{ t.weight|floatformat:0 }}</span> <small class="text-muted">كجم</small></td>
+                        <td class="fw-bold text-primary">{{ t.total_price|floatformat:0 }}</td>
+                        <td>
                             {% if t.financialrecord.remaining_amount > 0 %}
-                                <span class="text-danger fw-bold">{{ t.financialrecord.remaining_amount }} <small>ج.م</small></span>
+                                <span class="text-danger fw-bold underline-dashed">{{ t.financialrecord.remaining_amount|floatformat:0 }}</span>
                             {% else %}
-                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-                                    <i class="fas fa-check-circle"></i> خالص
-                                </span>
+                                <i class="fas fa-check-circle text-success" title="خالص"></i>
                             {% endif %}
+                        </td>
+                        <td class="print-hide">
+                            <a href="/admin/store/dailytransaction/{{ t.id }}/change/" class="btn btn-sm btn-light rounded-2"><i class="fas fa-edit text-muted"></i></a>
                         </td>
                     </tr>
                     {% empty %}
-                    <tr>
-                        <td colspan="8" class="py-5 text-muted">
-                            <div class="text-center">
-                                <i class="fas fa-folder-open fa-3x mb-3 opacity-25"></i>
-                                <p>لا توجد بيانات متاحة حالياً</p>
-                            </div>
-                        </td>
-                    </tr>
+                    <tr><td colspan="7" class="py-5 text-muted">لم يتم العثور على أي حركات في هذه الفترة</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -119,38 +205,101 @@
     </div>
 </div>
 
-<style>
-    /* تحسينات الاستجابة للأجهزة المحمولة */
-    .table-responsive {
-        -webkit-overflow-scrolling: touch;
-    }
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+    <div class="card-header bg-danger text-white py-3 d-flex justify-content-between align-items-center" style="background: var(--danger-grad) !important;">
+        <h6 class="m-0 fw-bold"><i class="fas fa-wallet me-2"></i> سجل المصروفات العام</h6>
+        <div class="btn-group btn-group-sm print-hide">
+            <a href="/admin/store/contactexpense/add/" class="btn btn-white btn-sm fw-bold">مصرف تاجر +</a>
+            <a href="/admin/store/homeexpense/add/" class="btn btn-outline-light btn-sm fw-bold">مصرف بيت +</a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 text-center" id="expenses-table">
+                <thead>
+                    <tr>
+                        <th class="py-3">التاريخ</th>
+                        <th class="py-3 text-start">البيان</th>
+                        <th class="py-3">المبلغ</th>
+                        <th class="py-3">المسؤول عن السداد</th>
+                        <th class="py-3 print-hide">إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ce in contact_expenses %}
+                    <tr class="expense-row" data-amount="{{ ce.amount|floatformat:0 }}">
+                        <td class="small text-muted">{{ ce.date|date:"d/m/Y" }}</td>
+                        <td class="text-start">
+                            <span class="text-info fw-bold d-block"><i class="fas fa-truck-loading me-1"></i> {{ ce.contact.name }}</span>
+                            <small class="text-muted">{{ ce.notes|default:"مصروف تجاري" }}</small>
+                        </td>
+                        <td class="text-danger fw-bold fs-5">{{ ce.amount|floatformat:0 }}</td>
+                        <td>
+                            {% if ce.payer_type == 'us' %}
+                                <span class="badge bg-danger rounded-pill px-3 shadow-sm"><i class="fas fa-arrow-left me-1"></i> نحن سددنا</span>
+                            {% else %}
+                                <span class="badge bg-success rounded-pill px-3 shadow-sm"><i class="fas fa-check me-1"></i> هو سدد</span>
+                            {% endif %}
+                        </td>
+                        <td class="print-hide">
+                            <a href="/admin/store/contactexpense/{{ ce.id }}/change/" class="btn btn-sm btn-light"><i class="fas fa-edit"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
 
-    /* ألوان مخصصة للصفوف */
-    .table-light-blue { background-color: #f8fbff !important; }
-    .table-light-orange { background-color: #fffaf4 !important; }
+                    {% for he in home_expenses %}
+                    <tr class="expense-row" data-amount="{{ he.amount|floatformat:0 }}">
+                        <td class="small text-muted">{{ he.date|date:"d/m/Y" }}</td>
+                        <td class="text-start">
+                            <span class="text-danger fw-bold d-block"><i class="fas fa-home me-1"></i> مصروف بيت</span>
+                            <small class="text-muted">{{ he.description }}</small>
+                        </td>
+                        <td class="text-danger fw-bold fs-5">{{ he.amount|floatformat:0 }}</td>
+                        <td><span class="badge bg-danger rounded-pill px-3 shadow-sm"><i class="fas fa-arrow-left me-1"></i> نحن سددنا</span></td>
+                        <td class="print-hide">
+                            <a href="/admin/store/homeexpense/{{ he.id }}/change/" class="btn btn-sm btn-light"><i class="fas fa-edit"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
 
-    /* تأثير تمرير الماوس */
-    .table-hover tbody tr:hover {
-        background-color: #f1f3f5 !important;
-        transition: 0.3s;
-    }
+                    {% if not contact_expenses and not home_expenses %}
+                    <tr><td colspan="5" class="py-5 text-muted small">لا توجد سجلات مصروفات</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 
-    /* تنسيقات الخطوط للشاشات الصغيرة */
-    @media (max-width: 768px) {
-        .table td, .table th {
-            padding: 0.75rem 0.5rem;
-            font-size: 0.85rem;
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        let totalSales = 0;
+        let totalPurchase = 0;
+        let totalExpenses = 0;
+
+        document.querySelectorAll('#trading-table tbody tr').forEach(row => {
+            let type = row.getAttribute('data-type');
+            let val = Math.round(parseFloat(row.getAttribute('data-total')) || 0);
+            if (type === 'out') totalSales += val;
+            else if (type === 'in') totalPurchase += val;
+        });
+
+        document.querySelectorAll('.expense-row').forEach(row => {
+            totalExpenses += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
+        });
+
+        animateValue("total-sales-val", totalSales);
+        animateValue("total-purchase-val", totalPurchase);
+        animateValue("total-expenses-val", totalExpenses);
+        animateValue("net-cash-val", (totalSales - totalPurchase - totalExpenses));
+
+        function animateValue(id, value) {
+            const obj = document.getElementById(id);
+            if(obj) {
+                obj.innerHTML = Math.round(value).toLocaleString('en-US') + ' <small class="fw-normal">ج.م</small>';
+                if (value < 0) obj.classList.add('text-warning');
+            }
         }
-        .badge { font-size: 0.7rem; }
-    }
-
-    /* تحسين الطباعة */
-    @media print {
-        @page { size: landscape; margin: 0.5cm; }
-        .navbar, .btn-group, form, .badge.bg-primary { display: none !important; }
-        .card { border: 1px solid #ddd !important; box-shadow: none !important; }
-        .table-responsive { overflow: visible !important; }
-        th { background-color: #0d6efd !important; color: white !important; -webkit-print-color-adjust: exact; }
-    }
-</style>
+    });
+</script>
 {% endblock %}

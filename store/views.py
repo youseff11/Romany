@@ -110,15 +110,42 @@ def transactions_list(request):
     period = request.GET.get('period', 'all')
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    transactions = DailyTransaction.objects.select_related('product', 'contact', 'financialrecord').all().order_by('-date')
     today = timezone.now().date()
 
-    if period == 'today': transactions = transactions.filter(date=today)
-    elif period == 'week': transactions = transactions.filter(date__gte=today - timedelta(days=7))
-    elif period == 'month': transactions = transactions.filter(date__gte=today - timedelta(days=30))
-    elif period == 'custom' and start_date and end_date: transactions = transactions.filter(date__range=[start_date, end_date])
+    # 1. جلب الحركات التجارية (وارد وصادر)
+    transactions = DailyTransaction.objects.select_related('product', 'contact', 'financialrecord').all().order_by('-date')
 
-    return render(request, 'transactions.html', {'transactions': transactions})
+    # 2. جلب مصاريف التجار ومصاريف البيت
+    contact_expenses = ContactExpense.objects.select_related('contact').all().order_by('-date')
+    home_expenses = HomeExpense.objects.all().order_by('-date')
+
+    # --- تطبيق الفلترة الزمنية على الكل ---
+    if period == 'today':
+        transactions = transactions.filter(date=today)
+        contact_expenses = contact_expenses.filter(date=today)
+        home_expenses = home_expenses.filter(date=today)
+    elif period == 'week':
+        last_week = today - timedelta(days=7)
+        transactions = transactions.filter(date__gte=last_week)
+        contact_expenses = contact_expenses.filter(date__gte=last_week)
+        home_expenses = home_expenses.filter(date__gte=last_week)
+    elif period == 'month':
+        last_month = today - timedelta(days=30)
+        transactions = transactions.filter(date__gte=last_month)
+        contact_expenses = contact_expenses.filter(date__gte=last_month)
+        home_expenses = home_expenses.filter(date__gte=last_month)
+    elif period == 'custom' and start_date and end_date:
+        transactions = transactions.filter(date__range=[start_date, end_date])
+        contact_expenses = contact_expenses.filter(date__range=[start_date, end_date])
+        home_expenses = home_expenses.filter(date__range=[start_date, end_date])
+
+    context = {
+        'transactions': transactions,
+        'contact_expenses': contact_expenses, # تم الإضافة
+        'home_expenses': home_expenses,       # تم الإضافة
+    }
+
+    return render(request, 'transactions.html', context)
 
 @login_required
 def contact_detail(request, pk):
