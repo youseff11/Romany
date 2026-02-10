@@ -3,7 +3,7 @@ from django.db.models import Sum, Prefetch, F, ExpressionWrapper, DecimalField
 from django.contrib.auth.decorators import login_required, user_passes_test
 from .models import (
     DailyTransaction, Product, FinancialRecord, PaymentInstallment, 
-    Contact, BankLoan, BankInstallment, Capital, HomeExpense # تم إضافة HomeExpense
+    Contact, BankLoan, BankInstallment, Capital, HomeExpense
 )
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -130,11 +130,6 @@ def contact_detail(request, pk):
     products = Product.objects.all()
     today = timezone.now().date()
     
-    # حساب الإجماليات
-    total_out = transactions.filter(transaction_type='out').aggregate(Sum('total_price'))['total_price__sum'] or 0
-    total_in = transactions.filter(transaction_type='in').aggregate(Sum('total_price'))['total_price__sum'] or 0
-    
-    # حساب الصافي المتبقي
     balance_us, balance_them = 0, 0
     records = FinancialRecord.objects.filter(transaction__contact=contact)
     for record in records:
@@ -154,8 +149,6 @@ def contact_detail(request, pk):
         'transactions': transactions, 
         'products': products,
         'today': today,
-        'total_out': total_out,
-        'total_in': total_in, 
         'total_remaining': abs(net_balance), 
         'net_balance': net_balance,
         'payment_history': payment_history,
@@ -181,6 +174,9 @@ def add_transaction_direct(request):
                     messages.error(request, f"الكمية غير كافية بالمخزن! المتاح: {product.quantity_available}")
                     return redirect(request.META.get('HTTP_REFERER'))
 
+            # ملاحظة هامة: تم إزالة خصم الخزنة من هنا لأن إنشاء Transaction 
+            # يتبعه إنشاء PaymentInstallment تلقائياً (عبر الموديل أو السجنال)
+            # والخصم سيتم هناك لمنع الازدواجية.
             DailyTransaction.objects.create(
                 date=request.POST.get('date'),
                 transaction_type=t_type,
@@ -191,7 +187,7 @@ def add_transaction_direct(request):
                 paid_amount_now=paid_dec  
             )
 
-            messages.success(request, "تمت إضافة العملية وتحديث السجلات المالية بنجاح.")
+            messages.success(request, "تمت إضافة العملية بنجاح.")
         except Exception as e:
             messages.error(request, f"خطأ في البيانات المرسلة: {e}")
             
@@ -210,9 +206,11 @@ def update_paid_amount(request, record_id):
             amount_dec = Decimal(payment_amount)
             if amount_dec > 0:
                 if record.transaction.transaction_type == 'out':
-                    direction = "استلام نقدية (تحصيل من العميل)"
+                    direction = "استلام نقدية (تحصيل)"
+                    change = amount_dec
                 else:
-                    direction = "دفع نقدية (سداد للمورد)"
+                    direction = "دفع نقدية (سداد)"
+                    change = -amount_dec
                 
                 full_notes = f"{direction} - {notes}" if notes else direction
 
@@ -221,11 +219,48 @@ def update_paid_amount(request, record_id):
                     amount=amount_dec,
                     notes=full_notes
                 )
-                messages.success(request, f"تم بنجاح {direction} بمبلغ {amount_dec}")
+
+                # تحديث الخزنة فقط عند إضافة دفعة جديدة يدوياً
+                capital = Capital.objects.first()
+                if capital:
+                    capital.initial_amount += change
+                    capital.save()
+
+                messages.success(request, f"تم {direction} بمبلغ {amount_dec} وتحديث الخزنة.")
             else:
                 messages.warning(request, "يجب إدخال مبلغ أكبر من الصفر.")
         except (InvalidOperation, ValueError):
-            messages.error(request, "خطأ: يرجى إدخال رقم صحيح للمبلغ.")
+            messages.error(request, "خطأ في المبلغ.")
+    return redirect(request.META.get('HTTP_REFERER'))
+
+@user_passes_test(lambda u: u.is_superuser)
+def edit_payment_amount(request, payment_id):
+    if request.method == 'POST':
+        payment = get_object_or_404(PaymentInstallment, id=payment_id)
+        old_amount = payment.amount
+        new_amount_str = request.POST.get('new_amount')
+        
+        try:
+            new_amount = Decimal(new_amount_str)
+            difference = new_amount - old_amount
+            transaction_type = payment.financial_record.transaction.transaction_type
+            
+            payment.amount = new_amount
+            payment.save()
+
+            capital = Capital.objects.first()
+            if capital:
+                # إذا كانت فاتورة بيع: زيادة التحصيل تزيد الخزنة
+                if transaction_type == 'out':
+                    capital.initial_amount += difference
+                # إذا كانت فاتورة شراء: زيادة السداد تنقص الخزنة
+                else:
+                    capital.initial_amount -= difference
+                capital.save()
+
+            messages.success(request, "تم تعديل الدفعة وتحديث الخزنة بالفرق.")
+        except (InvalidOperation, ValueError):
+            messages.error(request, "خطأ في المبلغ.")
     return redirect(request.META.get('HTTP_REFERER'))
 
 # --- 4. نظام كشف حساب البنك والأقساط ---
@@ -258,7 +293,16 @@ def toggle_installment_status(request, inst_id):
     installment = get_object_or_404(BankInstallment, id=inst_id)
     installment.is_paid = not installment.is_paid
     installment.save()
-    messages.success(request, f"تم تحديث حالة قسط شهر {installment.due_date.month} بنجاح.")
+    
+    capital = Capital.objects.first()
+    if capital:
+        if installment.is_paid:
+            capital.initial_amount -= installment.total_installment_amount
+        else:
+            capital.initial_amount += installment.total_installment_amount
+        capital.save()
+        
+    messages.success(request, "تم تحديث القسط وتعديل الخزنة.")
     return redirect('bank_statement')
 
 @login_required
@@ -271,11 +315,9 @@ def update_installment_charges(request, inst_id):
             try:
                 installment.extra_charges = Decimal(new_charges)
                 installment.save()
-                messages.success(request, f"تم تحديث الرسوم وإعادة احتساب إجمالي قسط شهر {installment.due_date.month}.")
+                messages.success(request, "تم تحديث الرسوم.")
             except (InvalidOperation, ValueError):
-                messages.error(request, "خطأ: يرجى إدخال رقم صحيح.")
-            except Exception as e:
-                messages.error(request, f"حدث خطأ: {str(e)}")
+                messages.error(request, "خطأ في الرقم.")
     return redirect('bank_statement')
 
 # --- 5. لوحة السجلات الإدارية (Admin Logs) ---
@@ -287,7 +329,6 @@ def admin_logs_dashboard(request):
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
-    # 1. سجل المشتريات والمدفوعات
     purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact', 'financialrecord').annotate(
         paid_amount=F('financialrecord__amount_paid')
     )
@@ -297,51 +338,37 @@ def admin_logs_dashboard(request):
         'financial_record__transaction__contact'
     )
 
-    # 2. سجل الأرباح (المبيعات)
     profit_logs = DailyTransaction.objects.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').annotate(
         paid_amount=F('financialrecord__amount_paid'),
-        cost_price=ExpressionWrapper(
-            F('weight') * F('product__purchase_price_per_kg'), 
-            output_field=DecimalField()
-        ),
         unit_profit=ExpressionWrapper(
             F('total_price') - (F('weight') * F('product__purchase_price_per_kg')), 
             output_field=DecimalField()
         )
     )
 
-    # 3. سجل مصاريف البيت (الجزء الجديد)
     home_expenses = HomeExpense.objects.all()
 
-    # تطبيق الفلترة الزمنية على الجميع بما فيهم مصاريف البيت
     if period == 'today':
         purchase_logs = purchase_logs.filter(date=today)
-        payment_logs = payment_logs.filter(date_paid__date=today)
         profit_logs = profit_logs.filter(date=today)
         home_expenses = home_expenses.filter(date=today)
     elif period == 'week':
         last_week = today - timedelta(days=7)
         purchase_logs = purchase_logs.filter(date__gte=last_week)
-        payment_logs = payment_logs.filter(date_paid__date__gte=last_week)
         profit_logs = profit_logs.filter(date__gte=last_week)
         home_expenses = home_expenses.filter(date__gte=last_week)
     elif period == 'month':
         last_month = today - timedelta(days=30)
         purchase_logs = purchase_logs.filter(date__gte=last_month)
-        payment_logs = payment_logs.filter(date_paid__date__gte=last_month)
         profit_logs = profit_logs.filter(date__gte=last_month)
         home_expenses = home_expenses.filter(date__gte=last_month)
     elif start_date and end_date:
         purchase_logs = purchase_logs.filter(date__range=[start_date, end_date])
-        payment_logs = payment_logs.filter(date_paid__date__range=[start_date, end_date])
         profit_logs = profit_logs.filter(date__range=[start_date, end_date])
         home_expenses = home_expenses.filter(date__range=[start_date, end_date])
 
-    # حسابات الملخص المالي
     total_sales_profit = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
     total_home_expenses = home_expenses.aggregate(total=Sum('amount'))['total'] or 0
-    
-    # صافي الربح للفترة (أرباح البيع - مصاريف البيت)
     net_profit_period = total_sales_profit - total_home_expenses
 
     capital_obj = Capital.objects.first()
@@ -371,13 +398,13 @@ def admin_logs_dashboard(request):
         'receivable': receivable,
         'payable': payable,
         'bank_remaining': bank_remaining,
-        'total_profit_period': total_sales_profit, # إجمالي أرباح التجارة
-        'total_home_expenses': total_home_expenses, # إجمالي المصاريف الشخصية
-        'net_profit_period': net_profit_period,    # الصافي النهائي
+        'total_profit_period': total_sales_profit,
+        'total_home_expenses': total_home_expenses,
+        'net_profit_period': net_profit_period,
         'purchase_logs': purchase_logs.order_by('-date'),
         'payment_logs': payment_logs.order_by('-date_paid')[:20],
         'profit_logs': profit_logs.order_by('-date'),
-        'home_expenses': home_expenses.order_by('-date'), # إرسال المصاريف للقالب
+        'home_expenses': home_expenses.order_by('-date'),
         'today': today,
         'start_date': start_date,
         'end_date': end_date,

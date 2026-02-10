@@ -153,7 +153,14 @@
                             <span class="badge bg-success-subtle text-success border border-success-subtle">استلمنا منه</span>
                         {% endif %}
                     </td>
-                    <td class="py-3 fw-bold text-success">+ {{ payment.amount|floatformat:0 }}</td>
+                    <td class="py-3 fw-bold text-success">
+                        + {{ payment.amount|floatformat:0 }}
+                        {% if user.is_superuser %}
+                        <a href="#" class="text-primary ms-2 no-print" data-bs-toggle="modal" data-bs-target="#editPayment{{ payment.id }}">
+                            <i class="fas fa-edit small"></i>
+                        </a>
+                        {% endif %}
+                    </td>
                     <td class="py-3">
                         <small class="text-muted">
                             {{ payment.financial_record.transaction.product.name }} 
@@ -162,6 +169,30 @@
                     </td>
                     <td class="py-3 small text-muted">{{ payment.notes|default:"---" }}</td>
                 </tr>
+
+                {% if user.is_superuser %}
+                <div class="modal fade" id="editPayment{{ payment.id }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-sm">
+                        <div class="modal-content border-0 shadow">
+                            <div class="modal-header bg-primary text-white py-2">
+                                <h6 class="modal-title">تعديل مبلغ الدفعة</h6>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <form action="{% url 'edit_payment_amount' payment.id %}" method="POST">
+                                {% csrf_token %}
+                                <div class="modal-body text-center p-4">
+                                    <label class="form-label small fw-bold mb-3">المبلغ الجديد</label>
+                                    <input type="number" step="0.01" name="new_amount" class="form-control form-control-lg text-center fw-bold" value="{{ payment.amount }}" required>
+                                </div>
+                                <div class="modal-footer border-0 p-2">
+                                    <button type="submit" class="btn btn-primary w-100 rounded-pill">حفظ التعديل</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% empty %}
                 <tr><td colspan="5" class="py-4 text-muted small">لم يتم تسجيل أي دفعات نقدية بعد</td></tr>
                 {% endfor %}

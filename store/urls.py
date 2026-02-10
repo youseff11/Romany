@@ -1,4 +1,5 @@
 from django.urls import path
+from django.shortcuts import redirect  # التصحيح هنا: يتم استيرادها من shortcuts
 from django.contrib.auth import views as auth_views
 from . import views
 
@@ -17,6 +18,9 @@ urlpatterns = [
     
     # --- 3. مسارات الإدارة المالية (للمسؤول فقط) ---
     path('update-paid/<int:record_id>/', views.update_paid_amount, name='update_paid_amount'),
+    # المسار الجديد لتعديل مبلغ الدفعة النقدية بالقلم
+    path('payment/edit/<int:payment_id>/', views.edit_payment_amount, name='edit_payment_amount'),
+    
     path('admin-logs/', views.admin_logs_dashboard, name='admin_logs'),
 
     # --- 4. مسارات قسم البنك ---
@@ -26,9 +30,6 @@ urlpatterns = [
     path('bank/installment/toggle/<int:inst_id>/', views.toggle_installment_status, name='toggle_installment_status'),
 
     # --- 5. مسارات "مصروف البيت" وإدارة الخزنة (الجديدة) ---
-    # مسار سريع لإضافة مصروف بيت جديد مباشرة من التقرير
     path('home-expenses/add/', lambda r: redirect('/admin/store/homeexpense/add/'), name='add_home_expense'),
-    
-    # مسار سريع لتعديل رأس المال أو الخزنة يدوياً عند الضرورة
     path('capital/update/', lambda r: redirect('/admin/store/capital/'), name='update_capital'),
 ]

@@ -131,5 +131,3 @@ class PaymentInstallmentAdmin(admin.ModelAdmin):
 
     def get_product(self, obj): return obj.financial_record.transaction.product.name
     get_product.short_description = 'المنتج المرتبط'
-
-    
