@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     Contact, Product, DailyTransaction, FinancialRecord, 
-    PaymentInstallment, BankLoan, BankInstallment, Capital, HomeExpense # تم إضافة HomeExpense
+    PaymentInstallment, BankLoan, BankInstallment, Capital, 
+    HomeExpense, ContactExpense  # إضافة ContactExpense
 )
 
 # --- 1. إعدادات أقساط الموردين والتجار (Inline) ---
@@ -14,7 +15,7 @@ class PaymentInstallmentInline(admin.TabularInline):
     verbose_name = "دفعة سداد نقدية"
     verbose_name_plural = "سجل الدفعات التفصيلي"
 
-# --- 2. إعدادات أقساط البنك (تظهر داخل صفحة القرض فقط) ---
+# --- 2. إعدادات أقساط البنك ---
 class BankInstallmentInline(admin.TabularInline):
     model = BankInstallment
     extra = 0 
@@ -25,6 +26,22 @@ class BankInstallmentInline(admin.TabularInline):
 
 # --- 3. تسجيل الموديلات في لوحة الإدارة ---
 
+@admin.register(ContactExpense)
+class ContactExpenseAdmin(admin.ModelAdmin):
+    list_display = ['date', 'contact', 'display_amount', 'payer_type_display', 'notes']
+    list_filter = ['date', 'contact', 'payer_type']
+    search_fields = ['contact__name', 'notes']
+
+    def display_amount(self, obj):
+        return format_html('<b style="color: #d63031;">{} ج.م</b>', obj.amount)
+    display_amount.short_description = 'قيمة المصروف'
+
+    def payer_type_display(self, obj):
+        if obj.payer_type == 'us':
+            return format_html('<span style="color: #0984e3;">نحن سددنا</span>')
+        return format_html('<span style="color: #6c5ce7;">العميل سدد</span>')
+    payer_type_display.short_description = 'الدافع'
+
 @admin.register(HomeExpense)
 class HomeExpenseAdmin(admin.ModelAdmin):
     list_display = ['date', 'description', 'display_amount']
@@ -33,7 +50,6 @@ class HomeExpenseAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
 
     def display_amount(self, obj):
-        # تمييز مبلغ المصروف باللون البرتقالي/الأحمر لأنه خصم من الخزنة
         return format_html('<b style="color: #e67e22; font-size: 14px;">{} ج.م</b>', obj.amount)
     display_amount.short_description = 'المبلغ المستهلك'
 
@@ -45,7 +61,6 @@ class CapitalAdmin(admin.ModelAdmin):
         return format_html('<b style="color: #28a745; font-size: 16px;">{} ج.م</b>', obj.initial_amount)
     display_amount.short_description = 'المبلغ الحالي في الخزنة'
 
-    # لمنع إضافة أكثر من سجل واحد للخزنة
     def has_add_permission(self, request):
         return not Capital.objects.exists()
 
@@ -126,8 +141,10 @@ class PaymentInstallmentAdmin(admin.ModelAdmin):
     list_filter = ['date_paid', 'financial_record__transaction__contact']
     search_fields = ['financial_record__transaction__contact__name', 'notes']
 
-    def get_contact(self, obj): return obj.financial_record.transaction.contact.name
+    def get_contact(self, obj): 
+        return obj.financial_record.transaction.contact.name if obj.financial_record else "حساب عام"
     get_contact.short_description = 'التاجر'
 
-    def get_product(self, obj): return obj.financial_record.transaction.product.name
+    def get_product(self, obj): 
+        return obj.financial_record.transaction.product.name if obj.financial_record else "---"
     get_product.short_description = 'المنتج المرتبط'

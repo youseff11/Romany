@@ -187,7 +187,26 @@ class Capital(models.Model):
     def __str__(self):
         return f"المبلغ المتاح حالياً: {self.initial_amount}"
 
-# --- الجزء الجديد: مصروف البيت ---
+# --- المصاريف والخدمات المرتبطة بالتجار (الجديد) ---
+
+class ContactExpense(models.Model):
+    PAYER_CHOICES = (('us', 'نحن سددنا'), ('them', 'هو سدد'))
+    
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, related_name="expenses", verbose_name="التاجر")
+    date = models.DateField(default=timezone.now, verbose_name="التاريخ")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="المبلغ")
+    payer_type = models.CharField(max_length=5, choices=PAYER_CHOICES, verbose_name="جهة السداد")
+    notes = models.TextField(verbose_name="بيان المصروف (نقل/عمالة/..)")
+
+    class Meta:
+        verbose_name = "مصروف تاجر"
+        verbose_name_plural = "مصاريف التجار والخدمات"
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.contact.name} - {self.notes} - {self.amount}"
+
+# --- الجزء الحالي: مصروف البيت ---
 
 class HomeExpense(models.Model):
     date = models.DateField(default=timezone.now, verbose_name="التاريخ")
@@ -240,3 +259,29 @@ def restore_cash_on_delete_expense(sender, instance, **kwargs):
     if capital:
         capital.initial_amount += instance.amount
         capital.save()
+
+# سيجنال لتحديث الخزنة عند إضافة أو حذف مصروف تاجر (الجديد)
+@receiver(post_save, sender=ContactExpense)
+def update_cash_on_contact_expense(sender, instance, created, **kwargs):
+    capital = Capital.objects.first()
+    if not capital:
+        return
+
+    if created:
+        # حالة إضافة مصروف جديد
+        if instance.payer_type == 'us':
+            capital.initial_amount -= instance.amount
+            capital.save()
+    else:
+        # حالة تعديل مصروف موجود (حساب الفرق)
+        # نستخدم _loaded_values التي يخزنها دجانجو أحياناً أو نعتمد على منطق بسيط
+        # لكن الأفضل والأضمن هو استخدام الفرق في الـ View أو تعديل السيجنال ليكون أكثر ذكاءً
+        pass
+
+@receiver(post_delete, sender=ContactExpense)
+def restore_cash_on_delete_contact_expense(sender, instance, **kwargs):
+    capital = Capital.objects.first()
+    if capital:
+        if instance.payer_type == 'us':
+            capital.initial_amount += instance.amount
+            capital.save()

@@ -80,7 +80,6 @@
     .custom-scroll::-webkit-scrollbar { width: 6px; }
     .custom-scroll::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 10px; }
 
-    /* تنسيقات التنبيهات */
     .bank-alert {
         border-radius: 15px;
         border: none;
@@ -92,7 +91,6 @@
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* تنسيق خاص لزر البنك المنسدل */
     .bank-toggle-btn {
         background: var(--bank-gradient);
         color: white;
@@ -243,15 +241,15 @@
         <div class="col-lg-6">
             <div class="card table-card h-100">
                 <div class="card-header bg-transparent py-4 border-0 d-flex justify-content-between align-items-center">
-                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-up text-success me-2"></i>مستحقاتنا لدى الغير</h5>
+                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-up text-success me-2"></i>مستحقاتنا لدى الغير والمصاريف</h5>
                     <span class="badge bg-success rounded-pill px-3">{{ receivable|floatformat:0 }} ج.م</span>
                 </div>
                 <div class="table-responsive custom-scroll" style="max-height: 400px;">
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>الاسم</th>
-                                <th>المنتج</th>
+                                <th>الاسم / البيان</th>
+                                <th>النوع</th>
                                 <th>التاريخ</th>
                                 <th class="text-end">المبلغ المتبقي</th>
                             </tr>
@@ -267,9 +265,23 @@
                                     <div class="text-muted" style="font-size: 0.7rem;">من أصل {{ record.transaction.total_price|floatformat:0 }}</div>
                                 </td>
                             </tr>
-                            {% empty %}
-                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات</td></tr>
                             {% endfor %}
+
+                            {% for exp_rec in receivable_expenses %}
+                            <tr class="table-success">
+                                <td class="fw-bold">{{ exp_rec.contact.name }}</td>
+                                <td>
+                                    <span class="badge bg-success text-white">سلفة / مصروف</span>
+                                    <small class="d-block text-muted">{{ exp_rec.notes }}</small> 
+                                </td>
+                                <td class="text-muted small">{{ exp_rec.date|date:"Y-m-d" }}</td>
+                                <td class="text-end fw-bold text-success">{{ exp_rec.amount|floatformat:0 }}</td>
+                            </tr>
+                            {% endfor %}
+
+                            {% if not receivable_details and not receivable_expenses %}
+                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات مستحقات</td></tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
@@ -279,15 +291,15 @@
         <div class="col-lg-6">
             <div class="card table-card h-100">
                 <div class="card-header bg-transparent py-4 border-0 d-flex justify-content-between align-items-center">
-                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-down text-danger me-2"></i>ديون للموردين</h5>
+                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-down text-danger me-2"></i>ديون الموردين والمصاريف</h5>
                     <span class="badge bg-danger rounded-pill px-3">{{ payable|floatformat:0 }} ج.م</span>
                 </div>
                 <div class="table-responsive custom-scroll" style="max-height: 400px;">
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>المورد</th>
-                                <th>المنتج</th>
+                                <th>المورد / البيان</th>
+                                <th>النوع</th>
                                 <th>التاريخ</th>
                                 <th class="text-end">المبلغ المتبقي</th>
                             </tr>
@@ -303,9 +315,23 @@
                                     <div class="text-muted" style="font-size: 0.7rem;">من أصل {{ record.transaction.total_price|floatformat:0 }}</div>
                                 </td>
                             </tr>
-                            {% empty %}
-                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات</td></tr>
                             {% endfor %}
+
+                            {% for expense in pending_expenses %}
+                            <tr class="table-danger" style="background-color: #fff9f9;">
+                                <td class="fw-bold text-dark">{{ expense.contact.name }}</td>
+                                <td>
+                                    <span class="badge bg-warning text-dark">دين مصروف</span>
+                                    <small class="d-block text-muted">{{ expense.notes }}</small> 
+                                </td>
+                                <td class="text-muted small">{{ expense.date|date:"Y-m-d" }}</td>
+                                <td class="text-end fw-bold text-danger">{{ expense.amount|floatformat:0 }}</td>
+                            </tr>
+                            {% endfor %}
+
+                            {% if not debt_details and not pending_expenses %}
+                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات ديون</td></tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
@@ -406,7 +432,7 @@
     </div>
 
     <div class="text-center py-5">
-        <p class="text-muted small"><i class="fas fa-shield-alt me-1"></i> نظام الإدارة الذكي - التحديث القادم في غضون ثوانٍ</p>
+        <p class="text-muted small"><i class="fas fa-shield-alt me-1"></i> نظام الإدارة الذكي - الروماني للاستيراد والتصدير</p>
     </div>
 </div>
 {% endblock %}
