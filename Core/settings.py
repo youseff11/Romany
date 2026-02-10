@@ -97,3 +97,83 @@ STATICFILES_DIRS = [
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
+
+
+
+# --- إعدادات قالب Jazzmin ---
+
+JAZZMIN_SETTINGS = {
+    # العنوان الذي يظهر في أعلى القائمة الجانبية (Sidebar)
+    "site_brand": "نظام الإدارة",
+
+    # الروابط في القائمة العلوية (Top Menu)
+    "topmenu_links": [
+        # رابط مباشر للصفحة الرئيسية للموقع
+        {"name": "الرئيسية", "url": "/", "new_window": False},
+        
+        # رابط لعرض الموقع العام (يفتح في نافذة جديدة)
+        {"name": "عرض الموقع", "url": "/", "new_window": True},
+    ],
+
+    # إضافة الرابط في القائمة الجانبية (Sidebar) مع أيقونة
+    "custom_links": {
+        "store": [  # اسم التطبيق الخاص بك
+            {
+                "name": "العودة للموقع", 
+                "url": "/", 
+                "icon": "fas fa-home", # أيقونة المنزل
+                "permissions": ["auth.view_user"]
+            },
+        ],
+    },
+
+    # أيقونات الموديلات في القائمة الجانبية
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "auth.user": "fas fa-user",
+        "store.Contact": "fas fa-address-book",
+        "store.Product": "fas fa-boxes",
+        "store.DailyTransaction": "fas fa-exchange-alt",
+        "store.FinancialRecord": "fas fa-file-invoice-dollar",
+        "store.HomeExpense": "fas fa-house-user",
+        "store.Capital": "fas fa-money-bill-wave",
+        "store.BankLoan": "fas fa-university",
+    },
+    
+    # جعل القائمة الجانبية تفتح وتغلق (اختياري)
+    "show_sidebar": True,
+    "navigation_expanded": True,
+}
+
+# --- تنسيق واجهة المستخدم (اختياري لجعل الشكل أجمل) ---
+JAZZMIN_UI_CONFIG = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-dark",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark navbar-primary",
+    "no_navbar_border": False,
+    "navbar_fixed": False,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": False,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    }
+}
