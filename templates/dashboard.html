@@ -187,14 +187,14 @@
         <div class="col-md-3">
             <div class="card stat-card h-100 p-3" style="background: var(--success-gradient); color: white;">
                 <div class="stat-icon"><i class="fas fa-wallet"></i></div>
-                <h6 class="opacity-75">مستحقات متبقية (لنا)</h6>
+                <h6 class="opacity-75">مستحقات صافية (لنا)</h6>
                 <h2 class="fw-bold m-0 display-stats">{{ receivable|floatformat:0 }} <small class="fs-6 fw-light">ج.م</small></h2>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card stat-card h-100 p-3" style="background: var(--danger-gradient); color: white;">
                 <div class="stat-icon"><i class="fas fa-credit-card"></i></div>
-                <h6 class="opacity-75">مديونيات متبقية (علينا)</h6>
+                <h6 class="opacity-75">مديونيات صافية (علينا)</h6>
                 <h2 class="fw-bold m-0 display-stats">{{ payable|floatformat:0 }} <small class="fs-6 fw-light">ج.م</small></h2>
             </div>
         </div>
@@ -241,47 +241,29 @@
         <div class="col-lg-6">
             <div class="card table-card h-100">
                 <div class="card-header bg-transparent py-4 border-0 d-flex justify-content-between align-items-center">
-                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-up text-success me-2"></i>مستحقاتنا لدى الغير والمصاريف</h5>
+                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-up text-success me-2"></i>صافي مستحقاتنا (العملاء)</h5>
                     <span class="badge bg-success rounded-pill px-3">{{ receivable|floatformat:0 }} ج.م</span>
                 </div>
                 <div class="table-responsive custom-scroll" style="max-height: 400px;">
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>الاسم / البيان</th>
-                                <th>النوع</th>
-                                <th>التاريخ</th>
-                                <th class="text-end">المبلغ المتبقي</th>
+                                <th>اسم التاجر / العميل</th>
+                                <th class="text-end">صافي المبلغ (لنا)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for record in receivable_details %}
+                            {% for item in receivable_details %}
                             <tr>
-                                <td class="fw-bold">{{ record.transaction.contact.name }}</td>
-                                <td><span class="badge bg-light text-dark fw-normal">{{ record.transaction.product.name }}</span></td>
-                                <td class="text-muted small">{{ record.transaction.date|date:"Y-m-d" }}</td>
+                                <td class="fw-bold">{{ item.contact_name }}</td>
                                 <td class="text-end">
-                                    <div class="fw-bold text-success">{{ record.remaining_amount|floatformat:0 }}</div>
-                                    <div class="text-muted" style="font-size: 0.7rem;">من أصل {{ record.transaction.total_price|floatformat:0 }}</div>
+                                    <div class="fw-bold text-success">{{ item.amount|floatformat:0 }} ج.م</div>
+                                    <small class="text-muted">رصيد مجمع</small>
                                 </td>
                             </tr>
+                            {% empty %}
+                            <tr><td colspan="2" class="text-center py-5 text-muted">لا توجد مستحقات حالية</td></tr>
                             {% endfor %}
-
-                            {% for exp_rec in receivable_expenses %}
-                            <tr class="table-success">
-                                <td class="fw-bold">{{ exp_rec.contact.name }}</td>
-                                <td>
-                                    <span class="badge bg-success text-white">سلفة / مصروف</span>
-                                    <small class="d-block text-muted">{{ exp_rec.notes }}</small> 
-                                </td>
-                                <td class="text-muted small">{{ exp_rec.date|date:"Y-m-d" }}</td>
-                                <td class="text-end fw-bold text-success">{{ exp_rec.amount|floatformat:0 }}</td>
-                            </tr>
-                            {% endfor %}
-
-                            {% if not receivable_details and not receivable_expenses %}
-                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات مستحقات</td></tr>
-                            {% endif %}
                         </tbody>
                     </table>
                 </div>
@@ -291,47 +273,29 @@
         <div class="col-lg-6">
             <div class="card table-card h-100">
                 <div class="card-header bg-transparent py-4 border-0 d-flex justify-content-between align-items-center">
-                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-down text-danger me-2"></i>ديون الموردين والمصاريف</h5>
+                    <h5 class="m-0 fw-bold text-dark"><i class="fas fa-arrow-circle-down text-danger me-2"></i>صافي الديون (الموردين)</h5>
                     <span class="badge bg-danger rounded-pill px-3">{{ payable|floatformat:0 }} ج.م</span>
                 </div>
                 <div class="table-responsive custom-scroll" style="max-height: 400px;">
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>المورد / البيان</th>
-                                <th>النوع</th>
-                                <th>التاريخ</th>
-                                <th class="text-end">المبلغ المتبقي</th>
+                                <th>اسم التاجر / المورد</th>
+                                <th class="text-end">صافي المبلغ (علينا)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for record in debt_details %}
+                            {% for item in debt_details %}
                             <tr>
-                                <td class="fw-bold">{{ record.transaction.contact.name }}</td>
-                                <td><span class="badge bg-light text-dark fw-normal">{{ record.transaction.product.name }}</span></td>
-                                <td class="text-muted small">{{ record.transaction.date|date:"Y-m-d" }}</td>
+                                <td class="fw-bold">{{ item.contact_name }}</td>
                                 <td class="text-end">
-                                    <div class="fw-bold text-danger">{{ record.remaining_amount|floatformat:0 }}</div>
-                                    <div class="text-muted" style="font-size: 0.7rem;">من أصل {{ record.transaction.total_price|floatformat:0 }}</div>
+                                    <div class="fw-bold text-danger">{{ item.amount|floatformat:0 }} ج.م</div>
+                                    <small class="text-muted">رصيد مجمع</small>
                                 </td>
                             </tr>
+                            {% empty %}
+                            <tr><td colspan="2" class="text-center py-5 text-muted">لا توجد ديون حالية</td></tr>
                             {% endfor %}
-
-                            {% for expense in pending_expenses %}
-                            <tr class="table-danger" style="background-color: #fff9f9;">
-                                <td class="fw-bold text-dark">{{ expense.contact.name }}</td>
-                                <td>
-                                    <span class="badge bg-warning text-dark">دين مصروف</span>
-                                    <small class="d-block text-muted">{{ expense.notes }}</small> 
-                                </td>
-                                <td class="text-muted small">{{ expense.date|date:"Y-m-d" }}</td>
-                                <td class="text-end fw-bold text-danger">{{ expense.amount|floatformat:0 }}</td>
-                            </tr>
-                            {% endfor %}
-
-                            {% if not debt_details and not pending_expenses %}
-                            <tr><td colspan="4" class="text-center py-5 text-muted">لا توجد سجلات ديون</td></tr>
-                            {% endif %}
                         </tbody>
                     </table>
                 </div>

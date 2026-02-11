@@ -20,6 +20,7 @@ def create_financial_record(sender, instance, created, **kwargs):
     if created:
         FinancialRecord.objects.get_or_create(transaction=instance)
 
+# --- 2. لوحة التحكم (Dashboard) ---
 @login_required
 def dashboard(request):
     period = request.GET.get('period', 'all')
@@ -46,60 +47,73 @@ def dashboard(request):
         transactions_queryset = transactions_queryset.filter(date__range=[start_date, end_date])
         income_queryset = income_queryset.filter(date__range=[start_date, end_date])
 
-    # --- حسابات الأرباح العامة ---
+    # --- حسابات المبيعات والمشتريات والوارد ---
     total_sales = transactions_queryset.filter(transaction_type='out').aggregate(total=Sum('total_price'))['total'] or 0
     total_income = income_queryset.aggregate(total=Sum('amount'))['total'] or 0
+    
     cost_of_goods_sold = transactions_queryset.filter(transaction_type='out').annotate(
         cost=ExpressionWrapper(F('weight') * F('product__purchase_price_per_kg'), output_field=DecimalField())
     ).aggregate(total=Sum('cost'))['total'] or 0
+    
     net_profit = (total_sales - cost_of_goods_sold) + total_income
 
-    # --- المنطق الجديد: حساب صافي الأرصدة لكل تاجر (المقاصة) ---
-    receivable_details = []  # مستحقاتنا (صافي موجب)
-    debt_details = []        # ديون علينا (صافي سالب)
-    total_receivable = Decimal(0)
-    total_payable = Decimal(0)
+    # --- تحضير البيانات لعملية المقاصة ---
+    # 1. جلب السجلات المالية (الديون والمستحقات)
+    receivable_records = FinancialRecord.objects.filter(
+        transaction__in=transactions_queryset.filter(transaction_type='out')
+    ).annotate(
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).filter(rem__gt=0).select_related('transaction__contact')
 
-    # نجلب كافة الجهات (التجار)
-    contacts = Contact.objects.all()
+    payable_records = FinancialRecord.objects.filter(
+        transaction__in=transactions_queryset.filter(transaction_type='in')
+    ).annotate(
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).filter(rem__gt=0).select_related('transaction__contact')
 
-    for contact in contacts:
-        # 1. رصيد المعاملات (بيع - شراء)
-        trans_out = DailyTransaction.objects.filter(contact=contact, transaction_type='out').aggregate(total=Sum('total_price'))['total'] or 0
-        trans_in = DailyTransaction.objects.filter(contact=contact, transaction_type='in').aggregate(total=Sum('total_price'))['total'] or 0
-        
-        # 2. المبالغ المدفوعة فعلياً في المعاملات (من خلال الفاتورة أو الدفعات اللاحقة)
-        paid_on_out = PaymentInstallment.objects.filter(financial_record__transaction__contact=contact, financial_record__transaction__transaction_type='out').aggregate(total=Sum('amount'))['total'] or 0
-        paid_on_in = PaymentInstallment.objects.filter(financial_record__transaction__contact=contact, financial_record__transaction__transaction_type='in').aggregate(total=Sum('amount'))['total'] or 0
-        
-        # إضافة المبالغ التي دُفعت لحظة إنشاء العملية (إذا كان موديلك يخزنها في DailyTransaction)
-        paid_now_out = DailyTransaction.objects.filter(contact=contact, transaction_type='out').aggregate(total=Sum('paid_amount_now'))['total'] or 0
-        paid_now_in = DailyTransaction.objects.filter(contact=contact, transaction_type='in').aggregate(total=Sum('paid_amount_now'))['total'] or 0
+    # 2. جلب المصاريف
+    receivable_expenses = ContactExpense.objects.filter(payer_type='us').select_related('contact')
+    pending_expenses = ContactExpense.objects.filter(payer_type='them').select_related('contact')
 
-        # 3. رصيد المصاريف (نحن دفعنا له - هو دفع لنا)
-        expenses_us = ContactExpense.objects.filter(contact=contact, payer_type='us').aggregate(total=Sum('amount'))['total'] or 0
-        expenses_them = ContactExpense.objects.filter(contact=contact, payer_type='them').aggregate(total=Sum('amount'))['total'] or 0
+    # --- قاموس لتجميع الصافي لكل تاجر ---
+    contact_balances = {}
 
-        # المعادلة النهائية للرصيد الصافي:
-        # (مبيعاتنا له + مصاريفنا عنه - ما قبضناه منه) - (مشترياتنا منه + مصاريفه عنا - ما دفعناه له)
-        # لتبسيطها حسب حالتك (بكر حميدة):
-        # مبيعات (0) + مصاريفنا عنه (7350) - (0) ] - [ مشتريات (0) + مصاريفه عنا (14300) - (0) ]
-        # النتيجة: 7350 - 14300 = -6950 (دين علينا)
-        
-        our_rights = (trans_out + expenses_us) - (paid_on_out + paid_now_out)
-        their_rights = (trans_in + expenses_them) - (paid_on_in + paid_now_in)
-        
-        net_balance = our_rights - their_rights
+    # إضافة مستحقاتنا (موجب)
+    for rec in receivable_records:
+        cid = rec.transaction.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + rec.rem
 
-        if net_balance > 0:
-            receivable_details.append({'contact': contact, 'remaining': net_balance})
-            total_receivable += net_balance
-        elif net_balance < 0:
-            debt_details.append({'contact': contact, 'remaining': abs(net_balance)})
-            total_payable += abs(net_balance)
+    for exp in receivable_expenses:
+        cid = exp.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + exp.amount
 
-    # --- البنك والعمليات الأخيرة ---
-    recent_sales = transactions_queryset.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').order_by('-date')[:10]
+    # خصم مديونياتنا (سالب)
+    for rec in payable_records:
+        cid = rec.transaction.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - rec.rem
+
+    for exp in pending_expenses:
+        cid = exp.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - exp.amount
+
+    # --- تصنيف النتائج بعد المقاصة ---
+    final_receivable_list = []
+    final_payable_list = []
+    
+    # جلب أسماء التجار لتجنب استعلامات متكررة
+    all_contacts = {c.id: c.name for c in Contact.objects.all()}
+
+    for cid, balance in contact_balances.items():
+        if balance > 0:
+            final_receivable_list.append({'contact_name': all_contacts.get(cid), 'amount': balance})
+        elif balance < 0:
+            final_payable_list.append({'contact_name': all_contacts.get(cid), 'amount': abs(balance)})
+
+    # --- حساب الإجماليات النهائية للعرض في المربعات العلوية ---
+    total_receivable = sum(item['amount'] for item in final_receivable_list)
+    total_payable = sum(item['amount'] for item in final_payable_list)
+
+    # --- البنك ---
     loan = BankLoan.objects.filter(is_active=True).first()
     bank_summary = {'total_remaining': 0, 'bank_name': "لا يوجد قرض نشط"}
     if loan:
@@ -120,9 +134,10 @@ def dashboard(request):
         'net_profit': net_profit,
         'receivable': total_receivable, 
         'payable': total_payable,
-        'receivable_details': receivable_details, 
-        'debt_details': debt_details,
-        'recent_sales': recent_sales, 
+        # هذه القوائم تحتوي الآن على الصافي المخصوم منه القيم المتقابلة
+        'receivable_details': final_receivable_list, 
+        'debt_details': final_payable_list,
+        'recent_sales': transactions_queryset.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').order_by('-date')[:10],
         'inventory': Product.objects.all(),
         'bank_summary': bank_summary,
         'upcoming_bank_alerts': BankInstallment.objects.filter(is_paid=False, due_date__range=[today, today + timedelta(days=3)]),
