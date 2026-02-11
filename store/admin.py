@@ -3,14 +3,15 @@ from django.utils.html import format_html
 from .models import (
     Contact, Product, DailyTransaction, FinancialRecord, 
     PaymentInstallment, BankLoan, BankInstallment, Capital, 
-    HomeExpense, ContactExpense, IncomeRecord  # إضافة الموديل الجديد هنا
+    HomeExpense, ContactExpense, IncomeRecord
 )
 
 # --- 1. إعدادات أقساط الموردين والتجار (Inline) ---
 class PaymentInstallmentInline(admin.TabularInline):
     model = PaymentInstallment
     extra = 0
-    readonly_fields = ['date_paid']
+    # جعلنا التاريخ قابلاً للتعديل هنا أيضاً ليتوافق مع التعديلات الجديدة
+    fields = ['date_paid', 'amount', 'notes']
     can_delete = True
     verbose_name = "دفعة سداد نقدية"
     verbose_name_plural = "سجل الدفعات التفصيلي"
@@ -35,7 +36,6 @@ class IncomeRecordAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
 
     def display_amount(self, obj):
-        # تمييز مبالغ الدخل باللون الأخضر المشرق
         return format_html('<b style="color: #2ecc71; font-size: 14px;">+ {} ج.م</b>', obj.amount)
     display_amount.short_description = 'المبلغ الوارد'
 
@@ -122,7 +122,7 @@ class FinancialRecordAdmin(admin.ModelAdmin):
     list_filter = ['transaction__transaction_type', 'transaction__date']
     search_fields = ['transaction__contact__name']
     inlines = [PaymentInstallmentInline]
-    readonly_fields = ['amount_paid']
+    readonly_fields = ['amount_paid'] # المبلغ المدفوع إجمالي يظل للقراءة لأنه يُحسب تلقائياً من الدفعات
 
     def get_date(self, obj): return obj.transaction.date
     get_date.short_description = 'التاريخ'
@@ -150,9 +150,11 @@ class FinancialRecordAdmin(admin.ModelAdmin):
 
 @admin.register(PaymentInstallment)
 class PaymentInstallmentAdmin(admin.ModelAdmin):
+    # إزالة readonly_fields لـ date_paid للسماح بتصحيح التواريخ من لوحة الإدارة
     list_display = ['date_paid', 'get_contact', 'amount', 'get_product', 'notes']
     list_filter = ['date_paid', 'financial_record__transaction__contact']
     search_fields = ['financial_record__transaction__contact__name', 'notes']
+    fields = ['financial_record', 'date_paid', 'amount', 'notes']
 
     def get_contact(self, obj): 
         return obj.financial_record.transaction.contact.name if obj.financial_record else "حساب عام"
