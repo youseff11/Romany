@@ -120,6 +120,7 @@
                         <form action="{% url 'update_paid_amount' t.financialrecord.id %}" method="POST" class="d-flex align-items-center justify-content-center gap-1">
                             {% csrf_token %}
                             <input type="number" name="amount_paid" class="form-control form-control-sm text-center border-success" style="width: 70px;" required>
+                            <input type="hidden" name="date" value="{{ today|date:'Y-m-d' }}">
                             <button type="submit" class="btn btn-sm btn-success p-1"><i class="fas fa-plus-circle"></i></button>
                         </form>
                         {% endif %}
@@ -154,7 +155,7 @@
             <tbody>
                 {% for payment in payment_history %}
                 <tr>
-                    <td class="py-3 small text-muted">{{ payment.date_paid|date:"Y/m/d H:i" }}</td>
+                    <td class="py-3 small text-muted">{{ payment.date_paid|date:"Y/m/d" }}</td>
                     <td>
                         {% if payment.financial_record.transaction.transaction_type == 'in' %}
                             <span class="badge bg-danger-subtle text-danger border border-danger-subtle">دفعنا له</span>
@@ -247,6 +248,10 @@
                 <form action="{% url 'edit_contact_expense' exp.id %}" method="POST">
                     {% csrf_token %}
                     <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">تاريخ المصروف</label>
+                            <input type="date" name="date" class="form-control border-warning" value="{{ exp.date|date:'Y-m-d' }}" required>
+                        </div>
                         <div class="mb-3 text-center">
                             <label class="form-label fw-bold small">قيمة المصروف</label>
                             <input type="number" step="0.01" name="amount" class="form-control form-control-lg text-center fw-bold border-warning" value="{{ exp.amount }}" required>
@@ -284,6 +289,10 @@
                 <form action="{% url 'edit_payment_amount' payment.id %}" method="POST">
                     {% csrf_token %}
                     <div class="modal-body text-center p-4">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">تاريخ الدفعة</label>
+                            <input type="date" name="date_paid" class="form-control text-center" value="{{ payment.date_paid|date:'Y-m-d' }}" required>
+                        </div>
                         <label class="form-label small fw-bold mb-3">المبلغ الجديد</label>
                         <input type="number" step="0.01" name="new_amount" class="form-control form-control-lg text-center fw-bold" value="{{ payment.amount }}" required>
                     </div>
@@ -352,6 +361,10 @@
                     {% csrf_token %}
                     <div class="modal-body p-4">
                         <div class="mb-3">
+                            <label class="form-label fw-bold small">تاريخ السداد</label>
+                            <input type="date" name="date" class="form-control" value="{{ today|date:'Y-m-d' }}" required>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label fw-bold small">اختر العملية لتنزيل المبلغ من مديونيتها</label>
                             <select name="record_id" class="form-select" required id="recordSelect">
                                 <option value="" disabled selected>-- اختر العملية من القائمة --</option>
@@ -388,6 +401,10 @@
                     {% csrf_token %}
                     <input type="hidden" name="contact_id" value="{{ contact.id }}">
                     <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">تاريخ المصروف</label>
+                            <input type="date" name="date" class="form-control border-warning" value="{{ today|date:'Y-m-d' }}" required>
+                        </div>
                         <div class="mb-3 text-center"><label class="form-label fw-bold small">قيمة المصروف</label><input type="number" step="0.01" name="amount" class="form-control form-control-lg text-center fw-bold border-warning" placeholder="0.00" required></div>
                         <div class="mb-3">
                             <label class="form-label fw-bold small">جهة السداد</label>
@@ -396,7 +413,7 @@
                                 <option value="them">هو سدد (تُخصم من حسابه كدفعة)</option>
                             </select>
                         </div>
-                        <div class="mb-3"><label class="form-label fw-bold small">البيان</label><textarea name="notes" class="form-control" rows="3" required></textarea></div>
+                        <div class="mb-3"><label class="form-label fw-bold small">البيان</label><textarea name="notes" class="form-control border-warning" rows="3" required></textarea></div>
                     </div>
                     <div class="modal-footer border-0">
                         <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">إلغاء</button>

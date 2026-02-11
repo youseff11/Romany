@@ -6,6 +6,8 @@ from django.utils import timezone
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
+# --- 1. الموديلات الأساسية (تجار ومنتجات) ---
+
 class Contact(models.Model):
     name = models.CharField(max_length=200, verbose_name="اسم التاجر")
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="رقم التليفون")
@@ -31,10 +33,12 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+# --- 2. نظام العمليات اليومية والديون ---
+
 class DailyTransaction(models.Model):
     TRANSACTION_TYPES = (('in', 'وارد'), ('out', 'صادر'))
     
-    date = models.DateField(verbose_name="التاريخ")
+    date = models.DateField(default=timezone.now, verbose_name="التاريخ")
     transaction_type = models.CharField(max_length=3, choices=TRANSACTION_TYPES, verbose_name="النوع (وارد/صادر)")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="اسم المنتج")
     contact = models.ForeignKey(Contact, on_delete=models.CASCADE, verbose_name="اسم التاجر")
@@ -68,6 +72,7 @@ class DailyTransaction(models.Model):
             PaymentInstallment.objects.create(
                 financial_record=financial_rec,
                 amount=self.paid_amount_now,
+                date_paid=self.date,  # جعل تاريخ الدفعة الفورية يتبع تاريخ الفاتورة
                 notes=f"دفع فوري عند تسجيل حركة {self.get_transaction_type_display()}"
             )
 
@@ -94,7 +99,8 @@ class FinancialRecord(models.Model):
 class PaymentInstallment(models.Model):
     financial_record = models.ForeignKey(FinancialRecord, on_delete=models.CASCADE, related_name="installments", verbose_name="السجل المالي")
     amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="قيمة الدفعة")
-    date_paid = models.DateTimeField(default=timezone.now, verbose_name="تاريخ ووقت الدفع")
+    # تم التعديل للسماح بإدخال التاريخ يدوياً عند الإضافة
+    date_paid = models.DateField(default=timezone.now, verbose_name="تاريخ الدفع") 
     notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات (مثل: طريقة الدفع)")
 
     class Meta:
@@ -104,10 +110,13 @@ class PaymentInstallment(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
+        # تحديث إجمالي المدفوع في السجل المالي بعد كل عملية حفظ (إنشاء أو تعديل)
         record = self.financial_record
-        total_installments = record.installments.aggregate(Sum('amount'))['amount__sum'] or 0
-        record.amount_paid = total_installments
+        total_paid = record.installments.aggregate(models.Sum('amount'))['amount__sum'] or 0
+        record.amount_paid = total_paid
         record.save()
+
+# --- 3. نظام القروض والبنك ---
 
 class BankLoan(models.Model):
     bank_name = models.CharField(max_length=200, verbose_name="اسم البنك")
@@ -174,6 +183,8 @@ class BankInstallment(models.Model):
         
         super().save(*args, **kwargs)
 
+# --- 4. إدارة الخزنة والمصاريف والمداخيل ---
+
 class Capital(models.Model):
     initial_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="رأس المال النقدي المتاح (الخزنة)")
     last_updated = models.DateTimeField(auto_now=True)
@@ -229,11 +240,12 @@ class HomeExpense(models.Model):
     def __str__(self):
         return f"{self.description} - {self.amount}"
 
+# --- 5. قسم الإشارات (Signals) لتحديث الخزنة آلياً ---
+
 @receiver(post_save, sender=PaymentInstallment)
 def update_cash_on_payment(sender, instance, created, **kwargs):
     capital = Capital.objects.first()
     if not capital: return
-
     if created:
         if instance.financial_record.transaction.transaction_type == 'out':
             capital.initial_amount += instance.amount
@@ -295,7 +307,3 @@ def restore_cash_on_delete_contact_expense(sender, instance, **kwargs):
     if capital and instance.payer_type == 'us':
         capital.initial_amount += instance.amount
         capital.save()
-
-@receiver(post_save, sender=BankInstallment)
-def update_cash_on_bank_payment(sender, instance, created, **kwargs):
-    pass

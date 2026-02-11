@@ -26,10 +26,10 @@ def dashboard(request):
     period = request.GET.get('period', 'all')
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    
+    today = timezone.now().date()
+
     transactions_queryset = DailyTransaction.objects.all()
     income_queryset = IncomeRecord.objects.all()
-    today = timezone.now().date()
 
     # --- فلترة المدة الزمنية ---
     if period == 'today':
@@ -47,7 +47,7 @@ def dashboard(request):
         transactions_queryset = transactions_queryset.filter(date__range=[start_date, end_date])
         income_queryset = income_queryset.filter(date__range=[start_date, end_date])
 
-    # --- حسابات المبيعات والمشتريات والوارد ---
+    # --- حسابات الأرباح والوارد ---
     total_sales = transactions_queryset.filter(transaction_type='out').aggregate(total=Sum('total_price'))['total'] or 0
     total_income = income_queryset.aggregate(total=Sum('amount'))['total'] or 0
     
@@ -57,59 +57,40 @@ def dashboard(request):
     
     net_profit = (total_sales - cost_of_goods_sold) + total_income
 
-    # --- تحضير البيانات لعملية المقاصة ---
-    # 1. جلب السجلات المالية (الديون والمستحقات)
-    receivable_records = FinancialRecord.objects.filter(
-        transaction__in=transactions_queryset.filter(transaction_type='out')
-    ).annotate(
-        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
-    ).filter(rem__gt=0).select_related('transaction__contact')
-
-    payable_records = FinancialRecord.objects.filter(
-        transaction__in=transactions_queryset.filter(transaction_type='in')
-    ).annotate(
-        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
-    ).filter(rem__gt=0).select_related('transaction__contact')
-
-    # 2. جلب المصاريف
-    receivable_expenses = ContactExpense.objects.filter(payer_type='us').select_related('contact')
-    pending_expenses = ContactExpense.objects.filter(payer_type='them').select_related('contact')
-
-    # --- قاموس لتجميع الصافي لكل تاجر ---
+    # --- منطق المقاصة الشامل (Netting Logic) ---
+    all_contacts = {c.id: c.name for c in Contact.objects.all()}
     contact_balances = {}
 
-    # إضافة مستحقاتنا (موجب)
-    for rec in receivable_records:
+    # 1. ديون الفواتير (لنا + / علينا -)
+    financial_records = FinancialRecord.objects.annotate(
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).filter(rem__gt=0)
+
+    for rec in financial_records:
         cid = rec.transaction.contact.id
-        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + rec.rem
+        if rec.transaction.transaction_type == 'out':
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + rec.rem
+        else:
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - rec.rem
 
-    for exp in receivable_expenses:
+    # 2. مصاريف التجار (دفعنا نحن + / دفع التاجر -)
+    all_c_expenses = ContactExpense.objects.all()
+    for exp in all_c_expenses:
         cid = exp.contact.id
-        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + exp.amount
+        if exp.payer_type == 'us':
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + exp.amount
+        else:
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - exp.amount
 
-    # خصم مديونياتنا (سالب)
-    for rec in payable_records:
-        cid = rec.transaction.contact.id
-        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - rec.rem
-
-    for exp in pending_expenses:
-        cid = exp.contact.id
-        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - exp.amount
-
-    # --- تصنيف النتائج بعد المقاصة ---
+    # تصنيف النتائج النهائية
     final_receivable_list = []
     final_payable_list = []
-    
-    # جلب أسماء التجار لتجنب استعلامات متكررة
-    all_contacts = {c.id: c.name for c in Contact.objects.all()}
-
     for cid, balance in contact_balances.items():
         if balance > 0:
             final_receivable_list.append({'contact_name': all_contacts.get(cid), 'amount': balance})
         elif balance < 0:
             final_payable_list.append({'contact_name': all_contacts.get(cid), 'amount': abs(balance)})
 
-    # --- حساب الإجماليات النهائية للعرض في المربعات العلوية ---
     total_receivable = sum(item['amount'] for item in final_receivable_list)
     total_payable = sum(item['amount'] for item in final_payable_list)
 
@@ -134,10 +115,9 @@ def dashboard(request):
         'net_profit': net_profit,
         'receivable': total_receivable, 
         'payable': total_payable,
-        # هذه القوائم تحتوي الآن على الصافي المخصوم منه القيم المتقابلة
         'receivable_details': final_receivable_list, 
         'debt_details': final_payable_list,
-        'recent_sales': transactions_queryset.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').order_by('-date')[:10],
+        'recent_sales': transactions_queryset.filter(transaction_type='out').select_related('product', 'contact').order_by('-date')[:10],
         'inventory': Product.objects.all(),
         'bank_summary': bank_summary,
         'upcoming_bank_alerts': BankInstallment.objects.filter(is_paid=False, due_date__range=[today, today + timedelta(days=3)]),
@@ -253,17 +233,15 @@ def add_contact_expense(request):
             amount = Decimal(request.POST.get('amount'))
             payer_type = request.POST.get('payer_type') 
             notes = request.POST.get('notes')
-            date = request.POST.get('date') or timezone.now().date()
+            date_val = request.POST.get('date') or timezone.now().date() # استقبال التاريخ
 
-            # إنشاء السجل فقط؛ السيجنال في models.py سيخصم من الخزنة تلقائياً
             ContactExpense.objects.create(
                 contact_id=contact_id,
                 amount=amount,
                 payer_type=payer_type,
                 notes=notes,
-                date=date
+                date=date_val # حفظ التاريخ
             )
-
             messages.success(request, "تم تسجيل المصروف وتحديث الخزنة تلقائياً.")
         except Exception as e:
             messages.error(request, f"خطأ في البيانات: {e}")
@@ -275,34 +253,33 @@ def edit_contact_expense(request, expense_id):
     if request.method == 'POST':
         expense = get_object_or_404(ContactExpense, id=expense_id)
         
-        # حفظ القيم القديمة قبل التعديل للمقارنة
         old_amount = expense.amount
         old_payer = expense.payer_type
         
         try:
             new_amount = Decimal(request.POST.get('amount'))
             new_payer = request.POST.get('payer_type')
-            
-            # 1. تحديث بيانات المصروف وحفظها
+            new_date = request.POST.get('date') # <--- استقبال التاريخ الجديد
+
+            # تحديث بيانات المصروف وحفظها
             expense.amount = new_amount
             expense.payer_type = new_payer
             expense.notes = request.POST.get('notes')
-            expense.save() # السيجنال لن يخصم شيئاً هنا لأنه ليس "created"
+            if new_date: # <--- التأكد من وجود تاريخ وتحديثه
+                expense.date = new_date 
+            
+            expense.save() 
 
-            # 2. إدارة الخزنة يدوياً للتعديل فقط
+            # إدارة الخزنة يدوياً (كودك الحالي سليم)
             capital = Capital.objects.first()
             if capital:
-                # الخطوة الأولى: إلغاء أثر العملية القديمة
                 if old_payer == 'us':
                     capital.initial_amount += old_amount
-                
-                # الخطوة الثانية: تطبيق أثر العملية الجديدة
                 if new_payer == 'us':
                     capital.initial_amount -= new_amount
-                
                 capital.save()
 
-            messages.success(request, "تم تعديل المصروف وتحديث الخزنة بنجاح.")
+            messages.success(request, "تم تعديل المصروف والتاريخ وتحديث الخزنة بنجاح.")
         except Exception as e:
             messages.error(request, f"خطأ أثناء التعديل: {e}")
             
@@ -344,6 +321,7 @@ def update_paid_amount(request, record_id):
     if request.method == 'POST':
         target_id = record_id if record_id != 0 else request.POST.get('record_id')
         payment_amount = request.POST.get('amount_paid')
+        payment_date = request.POST.get('date') or timezone.now().date() # استقبال التاريخ
         notes = request.POST.get('notes', '')
         
         record = get_object_or_404(FinancialRecord, id=target_id)
@@ -352,48 +330,54 @@ def update_paid_amount(request, record_id):
             amount_dec = Decimal(payment_amount)
             if amount_dec > 0:
                 direction = "تحصيل نقدية" if record.transaction.transaction_type == 'out' else "سداد نقدية"
-                full_notes = f"{direction} - {notes}" if notes else direction
-
-                # السيجنال المرتبط بهذا الموديل سيتولى تحديث الخزنة آلياً
+                
                 PaymentInstallment.objects.create(
                     financial_record=record,
                     amount=amount_dec,
-                    notes=full_notes
+                    date_paid=payment_date, # حفظ التاريخ المختار
+                    notes=f"{direction} - {notes}" if notes else direction
                 )
-
-                messages.success(request, f"تم {direction} بمبلغ {amount_dec}.")
+                messages.success(request, f"تم تسجيل {direction} بمبلغ {amount_dec}.")
             else:
                 messages.warning(request, "يجب إدخال مبلغ أكبر من الصفر.")
         except (InvalidOperation, ValueError):
             messages.error(request, "خطأ في المبلغ.")
     return redirect(request.META.get('HTTP_REFERER'))
 
+@login_required
 @user_passes_test(lambda u: u.is_superuser)
 def edit_payment_amount(request, payment_id):
     if request.method == 'POST':
         payment = get_object_or_404(PaymentInstallment, id=payment_id)
         old_amount = payment.amount
-        new_amount_str = request.POST.get('new_amount')
         
+        new_amount_str = request.POST.get('new_amount')
+        new_date = request.POST.get('date_paid') # <--- استقبال التاريخ
+
         try:
             new_amount = Decimal(new_amount_str)
             difference = new_amount - old_amount
-            transaction_type = payment.financial_record.transaction.transaction_type
             
+            # 1. تحديث البيانات
             payment.amount = new_amount
+            if new_date: # <--- تحديث التاريخ هنا
+                payment.date_paid = new_date
             payment.save()
 
+            # 2. تحديث الخزنة (كودك الحالي سليم)
             capital = Capital.objects.first()
             if capital:
-                if transaction_type == 'out':
+                transaction_type = payment.financial_record.transaction.transaction_type
+                if transaction_type == 'out': 
                     capital.initial_amount += difference
-                else:
+                else: 
                     capital.initial_amount -= difference
                 capital.save()
 
-            messages.success(request, "تم تعديل الدفعة وتحديث الخزنة.")
-        except (InvalidOperation, ValueError):
-            messages.error(request, "خطأ في المبلغ.")
+            messages.success(request, "تم تعديل المبلغ والتاريخ وتحديث السجلات.")
+        except Exception as e:
+            messages.error(request, f"خطأ تقني: {str(e)}")
+            
     return redirect(request.META.get('HTTP_REFERER'))
 
 # --- 4. نظام البنك والأقساط ---
