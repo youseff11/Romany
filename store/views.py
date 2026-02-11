@@ -28,7 +28,7 @@ def dashboard(request):
     end_date = request.GET.get('end_date')
     
     transactions_queryset = DailyTransaction.objects.all()
-    income_queryset = IncomeRecord.objects.all() # جلب المبالغ الواردة
+    income_queryset = IncomeRecord.objects.all()
     today = timezone.now().date()
 
     # --- فلترة المدة الزمنية ---
@@ -49,45 +49,71 @@ def dashboard(request):
 
     # --- حسابات المبيعات والمشتريات والوارد ---
     total_sales = transactions_queryset.filter(transaction_type='out').aggregate(total=Sum('total_price'))['total'] or 0
-    total_purchases = transactions_queryset.filter(transaction_type='in').aggregate(total=Sum('total_price'))['total'] or 0
-    total_income = income_queryset.aggregate(total=Sum('amount'))['total'] or 0 # مجموع المبالغ الواردة
+    total_income = income_queryset.aggregate(total=Sum('amount'))['total'] or 0
     
     cost_of_goods_sold = transactions_queryset.filter(transaction_type='out').annotate(
         cost=ExpressionWrapper(F('weight') * F('product__purchase_price_per_kg'), output_field=DecimalField())
     ).aggregate(total=Sum('cost'))['total'] or 0
     
-    # صافي الربح = (أرباح المبيعات + المبالغ الواردة الأخرى)
     net_profit = (total_sales - cost_of_goods_sold) + total_income
 
-    # --- 1. مستحقاتنا (لنا) ---
+    # --- تحضير البيانات لعملية المقاصة ---
+    # 1. جلب السجلات المالية (الديون والمستحقات)
     receivable_records = FinancialRecord.objects.filter(
         transaction__in=transactions_queryset.filter(transaction_type='out')
     ).annotate(
-        remaining=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
-    ).filter(remaining__gt=0)
-    
-    receivable_expenses = ContactExpense.objects.filter(payer_type='us').select_related('contact').order_by('-date')
-    
-    total_receivable = (receivable_records.aggregate(total=Sum('remaining'))['total'] or 0) + \
-                       (receivable_expenses.aggregate(total=Sum('amount'))['total'] or 0)
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).filter(rem__gt=0).select_related('transaction__contact')
 
-    # --- 2. مديونيات (علينا) ---
     payable_records = FinancialRecord.objects.filter(
         transaction__in=transactions_queryset.filter(transaction_type='in')
     ).annotate(
-        remaining=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
-    ).filter(remaining__gt=0)
-    
-    pending_expenses = ContactExpense.objects.filter(payer_type='them').select_related('contact').order_by('-date')
-    
-    total_payable = (payable_records.aggregate(total=Sum('remaining'))['total'] or 0) + \
-                     (pending_expenses.aggregate(total=Sum('amount'))['total'] or 0)
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    ).filter(rem__gt=0).select_related('transaction__contact')
 
-    # --- البنك والعمليات الأخيرة ---
-    debt_details = payable_records.select_related('transaction', 'transaction__contact', 'transaction__product').order_by('transaction__date')
-    receivable_details = receivable_records.select_related('transaction', 'transaction__contact', 'transaction__product').order_by('transaction__date')
-    recent_sales = transactions_queryset.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').order_by('-date')[:10]
+    # 2. جلب المصاريف
+    receivable_expenses = ContactExpense.objects.filter(payer_type='us').select_related('contact')
+    pending_expenses = ContactExpense.objects.filter(payer_type='them').select_related('contact')
 
+    # --- قاموس لتجميع الصافي لكل تاجر ---
+    contact_balances = {}
+
+    # إضافة مستحقاتنا (موجب)
+    for rec in receivable_records:
+        cid = rec.transaction.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + rec.rem
+
+    for exp in receivable_expenses:
+        cid = exp.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + exp.amount
+
+    # خصم مديونياتنا (سالب)
+    for rec in payable_records:
+        cid = rec.transaction.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - rec.rem
+
+    for exp in pending_expenses:
+        cid = exp.contact.id
+        contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - exp.amount
+
+    # --- تصنيف النتائج بعد المقاصة ---
+    final_receivable_list = []
+    final_payable_list = []
+    
+    # جلب أسماء التجار لتجنب استعلامات متكررة
+    all_contacts = {c.id: c.name for c in Contact.objects.all()}
+
+    for cid, balance in contact_balances.items():
+        if balance > 0:
+            final_receivable_list.append({'contact_name': all_contacts.get(cid), 'amount': balance})
+        elif balance < 0:
+            final_payable_list.append({'contact_name': all_contacts.get(cid), 'amount': abs(balance)})
+
+    # --- حساب الإجماليات النهائية للعرض في المربعات العلوية ---
+    total_receivable = sum(item['amount'] for item in final_receivable_list)
+    total_payable = sum(item['amount'] for item in final_payable_list)
+
+    # --- البنك ---
     loan = BankLoan.objects.filter(is_active=True).first()
     bank_summary = {'total_remaining': 0, 'bank_name': "لا يوجد قرض نشط"}
     if loan:
@@ -108,11 +134,10 @@ def dashboard(request):
         'net_profit': net_profit,
         'receivable': total_receivable, 
         'payable': total_payable,
-        'receivable_details': receivable_details, 
-        'debt_details': debt_details,
-        'receivable_expenses': receivable_expenses, 
-        'pending_expenses': pending_expenses,
-        'recent_sales': recent_sales, 
+        # هذه القوائم تحتوي الآن على الصافي المخصوم منه القيم المتقابلة
+        'receivable_details': final_receivable_list, 
+        'debt_details': final_payable_list,
+        'recent_sales': transactions_queryset.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').order_by('-date')[:10],
         'inventory': Product.objects.all(),
         'bank_summary': bank_summary,
         'upcoming_bank_alerts': BankInstallment.objects.filter(is_paid=False, due_date__range=[today, today + timedelta(days=3)]),
@@ -230,6 +255,7 @@ def add_contact_expense(request):
             notes = request.POST.get('notes')
             date = request.POST.get('date') or timezone.now().date()
 
+            # إنشاء السجل فقط؛ السيجنال في models.py سيخصم من الخزنة تلقائياً
             ContactExpense.objects.create(
                 contact_id=contact_id,
                 amount=amount,
@@ -238,7 +264,7 @@ def add_contact_expense(request):
                 date=date
             )
 
-            messages.success(request, "تم تسجيل المصروف بنجاح.")
+            messages.success(request, "تم تسجيل المصروف وتحديث الخزنة تلقائياً.")
         except Exception as e:
             messages.error(request, f"خطأ في البيانات: {e}")
             
@@ -248,28 +274,37 @@ def add_contact_expense(request):
 def edit_contact_expense(request, expense_id):
     if request.method == 'POST':
         expense = get_object_or_404(ContactExpense, id=expense_id)
+        
+        # حفظ القيم القديمة قبل التعديل للمقارنة
         old_amount = expense.amount
         old_payer = expense.payer_type
         
         try:
             new_amount = Decimal(request.POST.get('amount'))
             new_payer = request.POST.get('payer_type')
-            expense.notes = request.POST.get('notes')
+            
+            # 1. تحديث بيانات المصروف وحفظها
             expense.amount = new_amount
             expense.payer_type = new_payer
-            expense.save()
+            expense.notes = request.POST.get('notes')
+            expense.save() # السيجنال لن يخصم شيئاً هنا لأنه ليس "created"
 
+            # 2. إدارة الخزنة يدوياً للتعديل فقط
             capital = Capital.objects.first()
             if capital:
+                # الخطوة الأولى: إلغاء أثر العملية القديمة
                 if old_payer == 'us':
                     capital.initial_amount += old_amount
+                
+                # الخطوة الثانية: تطبيق أثر العملية الجديدة
                 if new_payer == 'us':
                     capital.initial_amount -= new_amount
+                
                 capital.save()
 
-            messages.success(request, "تم تعديل المصروف وتحديث الخزنة.")
+            messages.success(request, "تم تعديل المصروف وتحديث الخزنة بنجاح.")
         except Exception as e:
-            messages.error(request, f"خطأ: {e}")
+            messages.error(request, f"خطأ أثناء التعديل: {e}")
             
     return redirect(request.META.get('HTTP_REFERER'))
 
@@ -277,32 +312,28 @@ def edit_contact_expense(request, expense_id):
 def add_transaction_direct(request):
     if request.method == 'POST':
         try:
-            contact_id = request.POST.get('contact_id')
             product_id = request.POST.get('product_id')
             weight = Decimal(request.POST.get('weight'))
-            price = Decimal(request.POST.get('price_per_kg'))
             t_type = request.POST.get('transaction_type')
             
-            amount_paid_now = request.POST.get('amount_paid_now', '0')
-            paid_dec = Decimal(amount_paid_now) if amount_paid_now else Decimal(0)
-            
+            # التحقق من المخزن في حالة البيع فقط
             if t_type == 'out':
                 product = get_object_or_404(Product, id=product_id)
                 if product.quantity_available < weight:
-                    messages.error(request, f"الكمية غير كافية بالمخزن! المتاح: {product.quantity_available}")
+                    messages.error(request, f"الكمية غير كافية! المتاح: {product.quantity_available}")
                     return redirect(request.META.get('HTTP_REFERER'))
 
             DailyTransaction.objects.create(
-                date=request.POST.get('date'),
+                date=request.POST.get('date') or timezone.now().date(),
                 transaction_type=t_type,
                 product_id=product_id,
-                contact_id=contact_id,
+                contact_id=request.POST.get('contact_id'),
                 weight=weight,
-                price_per_kg=price,
-                paid_amount_now=paid_dec  
+                price_per_kg=Decimal(request.POST.get('price_per_kg')),
+                paid_amount_now=Decimal(request.POST.get('amount_paid_now') or 0)
             )
 
-            messages.success(request, "تمت إضافة العملية بنجاح.")
+            messages.success(request, "تمت إضافة العملية وتحديث السجلات بنجاح.")
         except Exception as e:
             messages.error(request, f"خطأ في البيانات: {e}")
             
@@ -320,25 +351,15 @@ def update_paid_amount(request, record_id):
         try:
             amount_dec = Decimal(payment_amount)
             if amount_dec > 0:
-                if record.transaction.transaction_type == 'out':
-                    direction = "تحصيل نقدية"
-                    change = amount_dec
-                else:
-                    direction = "سداد نقدية"
-                    change = -amount_dec
-                
+                direction = "تحصيل نقدية" if record.transaction.transaction_type == 'out' else "سداد نقدية"
                 full_notes = f"{direction} - {notes}" if notes else direction
 
+                # السيجنال المرتبط بهذا الموديل سيتولى تحديث الخزنة آلياً
                 PaymentInstallment.objects.create(
                     financial_record=record,
                     amount=amount_dec,
                     notes=full_notes
                 )
-
-                capital = Capital.objects.first()
-                if capital:
-                    capital.initial_amount += change
-                    capital.save()
 
                 messages.success(request, f"تم {direction} بمبلغ {amount_dec}.")
             else:
@@ -441,6 +462,7 @@ def admin_logs_dashboard(request):
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
+    # --- 1. جلب البيانات الأساسية مع الفلترة ---
     purchase_logs = DailyTransaction.objects.filter(transaction_type='in').select_related('product', 'contact', 'financialrecord').annotate(
         paid_amount=F('financialrecord__amount_paid')
     )
@@ -460,62 +482,77 @@ def admin_logs_dashboard(request):
 
     home_expenses = HomeExpense.objects.all()
     contact_expenses = ContactExpense.objects.select_related('contact').all()
-    income_records = IncomeRecord.objects.all() # جلب الوارد في سجلات المدير
+    income_records = IncomeRecord.objects.all()
 
+    # تطبيق الفلترة الزمنية
     if period == 'today':
-        purchase_logs = purchase_logs.filter(date=today)
-        profit_logs = profit_logs.filter(date=today)
-        home_expenses = home_expenses.filter(date=today)
-        contact_expenses = contact_expenses.filter(date=today)
+        purchase_logs, profit_logs = purchase_logs.filter(date=today), profit_logs.filter(date=today)
+        home_expenses, contact_expenses = home_expenses.filter(date=today), contact_expenses.filter(date=today)
         income_records = income_records.filter(date=today)
     elif period == 'week':
         last_week = today - timedelta(days=7)
-        purchase_logs = purchase_logs.filter(date__gte=last_week)
-        profit_logs = profit_logs.filter(date__gte=last_week)
-        home_expenses = home_expenses.filter(date__gte=last_week)
-        contact_expenses = contact_expenses.filter(date__gte=last_week)
+        purchase_logs, profit_logs = purchase_logs.filter(date__gte=last_week), profit_logs.filter(date__gte=last_week)
+        home_expenses, contact_expenses = home_expenses.filter(date__gte=last_week), contact_expenses.filter(date__gte=last_week)
         income_records = income_records.filter(date__gte=last_week)
     elif period == 'month':
         last_month = today - timedelta(days=30)
-        purchase_logs = purchase_logs.filter(date__gte=last_month)
-        profit_logs = profit_logs.filter(date__gte=last_month)
-        home_expenses = home_expenses.filter(date__gte=last_month)
-        contact_expenses = contact_expenses.filter(date__gte=last_month)
+        purchase_logs, profit_logs = purchase_logs.filter(date__gte=last_month), profit_logs.filter(date__gte=last_month)
+        home_expenses, contact_expenses = home_expenses.filter(date__gte=last_month), contact_expenses.filter(date__gte=last_month)
         income_records = income_records.filter(date__gte=last_month)
     elif start_date and end_date:
-        purchase_logs = purchase_logs.filter(date__range=[start_date, end_date])
-        profit_logs = profit_logs.filter(date__range=[start_date, end_date])
-        home_expenses = home_expenses.filter(date__range=[start_date, end_date])
-        contact_expenses = contact_expenses.filter(date__range=[start_date, end_date])
+        purchase_logs, profit_logs = purchase_logs.filter(date__range=[start_date, end_date]), profit_logs.filter(date__range=[start_date, end_date])
+        home_expenses, contact_expenses = home_expenses.filter(date__range=[start_date, end_date]), contact_expenses.filter(date__range=[start_date, end_date])
         income_records = income_records.filter(date__range=[start_date, end_date])
 
+    # --- 2. حسابات صافي ربح الفترة ---
     total_sales_profit = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
     total_home_expenses = home_expenses.aggregate(total=Sum('amount'))['total'] or 0
     total_contact_expenses = contact_expenses.aggregate(total=Sum('amount'))['total'] or 0
     total_income_period = income_records.aggregate(total=Sum('amount'))['total'] or 0
     
-    # صافي ربح الفترة معدل ليشمل المبالغ الواردة
     net_profit_period = (total_sales_profit + total_income_period) - (total_home_expenses + total_contact_expenses)
 
+    # --- 3. منطق المقاصة الشامل (Netting Logic) ---
+    # جلب كافة الديون من الفواتير
+    financial_records = FinancialRecord.objects.all().annotate(
+        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
+    )
+
+    contact_balances = {} # قاموس لتجميع صافي كل تاجر
+
+    # إضافة ديون الفواتير (لنا + / علينا -)
+    for rec in financial_records:
+        cid = rec.transaction.contact.id
+        if rec.transaction.transaction_type == 'out':
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + rec.rem
+        else:
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - rec.rem
+
+    # إضافة كافة مصاريف التجار (دفعنا نحن + / دفع التاجر -)
+    all_c_expenses = ContactExpense.objects.all()
+    for exp in all_c_expenses:
+        cid = exp.contact.id
+        if exp.payer_type == 'us':
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) + exp.amount
+        else:
+            contact_balances[cid] = contact_balances.get(cid, Decimal(0)) - exp.amount
+
+    # حساب الإجماليات النهائية بعد المقاصة لكل التجار
+    receivable = sum(bal for bal in contact_balances.values() if bal > 0)
+    payable = abs(sum(bal for bal in contact_balances.values() if bal < 0))
+
+    # --- 4. حسابات المركز المالي ---
     capital_obj = Capital.objects.first()
     cash_in_hand = capital_obj.initial_amount if capital_obj else Decimal(0)
 
     products = Product.objects.all()
     total_inventory_value = sum(p.quantity_available * p.purchase_price_per_kg for p in products)
 
-    receivable = FinancialRecord.objects.filter(transaction__transaction_type='out').annotate(
-        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
-    ).aggregate(total=Sum('rem'))['total'] or 0
-
-    payable = FinancialRecord.objects.filter(transaction__transaction_type='in').annotate(
-        rem=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
-    ).aggregate(total=Sum('rem'))['total'] or 0
-
     loan = BankLoan.objects.filter(is_active=True).first()
     bank_remaining = BankInstallment.objects.filter(loan=loan, is_paid=False).aggregate(
         total=Sum('total_installment_amount'))['total'] or 0 if loan else 0
 
-    # إجمالي رأس المال = (نقدية + مخزن + ديون لنا) - (ديون علينا + متبقي القرض)
+    # إجمالي رأس المال المعدل بالمقاصة
     total_capital = (cash_in_hand + total_inventory_value + receivable) - (payable + bank_remaining)
 
     context = {
@@ -535,7 +572,7 @@ def admin_logs_dashboard(request):
         'profit_logs': profit_logs.order_by('-date'),
         'home_expenses': home_expenses.order_by('-date'),
         'contact_expenses': contact_expenses.order_by('-date'),
-        'income_logs': income_records.order_by('-date'), # إضافة الوارد للسجلات
+        'income_logs': income_records.order_by('-date'),
         'today': today,
         'start_date': start_date,
         'end_date': end_date,
