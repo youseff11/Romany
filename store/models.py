@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
-# --- الموديلات الحالية (بدون تغيير) ---
+# --- 1. الموديلات الأساسية (التجار والمخزن) ---
 
 class Contact(models.Model):
     name = models.CharField(max_length=200, verbose_name="اسم التاجر")
@@ -32,6 +32,8 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
+
+# --- 2. حركة البيع والشراء والسجلات المالية ---
 
 class DailyTransaction(models.Model):
     TRANSACTION_TYPES = (('in', 'وارد'), ('out', 'صادر'))
@@ -111,6 +113,8 @@ class PaymentInstallment(models.Model):
         record.amount_paid = total_installments
         record.save()
 
+# --- 3. القروض البنكية ---
+
 class BankLoan(models.Model):
     bank_name = models.CharField(max_length=200, verbose_name="اسم البنك")
     loan_type = models.CharField(max_length=100, default="قرض عادي", verbose_name="نوع القرض")
@@ -176,6 +180,8 @@ class BankInstallment(models.Model):
         
         super().save(*args, **kwargs)
 
+# --- 4. إدارة رأس المال والتدفقات النقدية ---
+
 class Capital(models.Model):
     initial_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="رأس المال النقدي المتاح (الخزنة)")
     last_updated = models.DateTimeField(auto_now=True)
@@ -187,7 +193,22 @@ class Capital(models.Model):
     def __str__(self):
         return f"المبلغ المتاح حالياً: {self.initial_amount}"
 
-# --- المصاريف والخدمات المرتبطة بالتجار (الجديد) ---
+# --- 5. المصاريف والواردات (الإيرادات) ---
+
+class IncomeRecord(models.Model):
+    """ موديل جديد لتسجيل أي مبالغ داخلة للخزنة (فلوس جاتلك) """
+    date = models.DateField(default=timezone.now, verbose_name="التاريخ")
+    source = models.CharField(max_length=255, verbose_name="المصدر (من أين؟)")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="المبلغ الوارد")
+    notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات")
+
+    class Meta:
+        verbose_name = "مبلغ وارد (دخل)"
+        verbose_name_plural = "سجل المبالغ الواردة"
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.source} + {self.amount}"
 
 class ContactExpense(models.Model):
     PAYER_CHOICES = (('us', 'نحن سددنا'), ('them', 'هو سدد'))
@@ -206,8 +227,6 @@ class ContactExpense(models.Model):
     def __str__(self):
         return f"{self.contact.name} - {self.notes} - {self.amount}"
 
-# --- الجزء الحالي: مصروف البيت ---
-
 class HomeExpense(models.Model):
     date = models.DateField(default=timezone.now, verbose_name="التاريخ")
     description = models.CharField(max_length=255, verbose_name="البيان (وصف المصروف)")
@@ -221,8 +240,9 @@ class HomeExpense(models.Model):
     def __str__(self):
         return f"{self.description} - {self.amount}"
 
-# --- السيجنالز (Signals) لتحديث الخزنة ---
+# --- 6. السيجنالز (Signals) لتحديث الخزنة أوتوماتيكياً ---
 
+# تحديث الخزنة عند دفع أقساط (صادر أو وارد)
 @receiver(post_save, sender=PaymentInstallment)
 def update_cash_on_payment(sender, instance, created, **kwargs):
     if created:
@@ -244,7 +264,23 @@ def update_cash_on_delete(sender, instance, **kwargs):
             capital.initial_amount += instance.amount
         capital.save()
 
-# سيجنال لتحديث الخزنة عند إضافة أو حذف مصروف بيت
+# تحديث الخزنة عند إضافة مبالغ واردة (الجديد)
+@receiver(post_save, sender=IncomeRecord)
+def update_cash_on_income(sender, instance, created, **kwargs):
+    if created:
+        capital = Capital.objects.first()
+        if capital:
+            capital.initial_amount += instance.amount
+            capital.save()
+
+@receiver(post_delete, sender=IncomeRecord)
+def restore_cash_on_delete_income(sender, instance, **kwargs):
+    capital = Capital.objects.first()
+    if capital:
+        capital.initial_amount -= instance.amount
+        capital.save()
+
+# تحديث الخزنة عند إضافة أو حذف مصروف بيت
 @receiver(post_save, sender=HomeExpense)
 def update_cash_on_home_expense(sender, instance, created, **kwargs):
     if created:
@@ -260,23 +296,16 @@ def restore_cash_on_delete_expense(sender, instance, **kwargs):
         capital.initial_amount += instance.amount
         capital.save()
 
-# سيجنال لتحديث الخزنة عند إضافة أو حذف مصروف تاجر (الجديد)
+# تحديث الخزنة عند إضافة أو حذف مصروف تاجر
 @receiver(post_save, sender=ContactExpense)
 def update_cash_on_contact_expense(sender, instance, created, **kwargs):
     capital = Capital.objects.first()
-    if not capital:
-        return
+    if not capital: return
 
     if created:
-        # حالة إضافة مصروف جديد
         if instance.payer_type == 'us':
             capital.initial_amount -= instance.amount
             capital.save()
-    else:
-        # حالة تعديل مصروف موجود (حساب الفرق)
-        # نستخدم _loaded_values التي يخزنها دجانجو أحياناً أو نعتمد على منطق بسيط
-        # لكن الأفضل والأضمن هو استخدام الفرق في الـ View أو تعديل السيجنال ليكون أكثر ذكاءً
-        pass
 
 @receiver(post_delete, sender=ContactExpense)
 def restore_cash_on_delete_contact_expense(sender, instance, **kwargs):

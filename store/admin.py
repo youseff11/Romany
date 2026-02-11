@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from .models import (
     Contact, Product, DailyTransaction, FinancialRecord, 
     PaymentInstallment, BankLoan, BankInstallment, Capital, 
-    HomeExpense, ContactExpense  # إضافة ContactExpense
+    HomeExpense, ContactExpense, IncomeRecord  # إضافة الموديل الجديد هنا
 )
 
 # --- 1. إعدادات أقساط الموردين والتجار (Inline) ---
@@ -15,7 +15,7 @@ class PaymentInstallmentInline(admin.TabularInline):
     verbose_name = "دفعة سداد نقدية"
     verbose_name_plural = "سجل الدفعات التفصيلي"
 
-# --- 2. إعدادات أقساط البنك ---
+# --- 2. إعدادات أقساط البنك (Inline) ---
 class BankInstallmentInline(admin.TabularInline):
     model = BankInstallment
     extra = 0 
@@ -25,6 +25,19 @@ class BankInstallmentInline(admin.TabularInline):
     verbose_name_plural = "جدول الأقساط الشهرية"
 
 # --- 3. تسجيل الموديلات في لوحة الإدارة ---
+
+@admin.register(IncomeRecord)
+class IncomeRecordAdmin(admin.ModelAdmin):
+    """إعدادات عرض المبالغ الواردة الأخرى (دخل إضافي)"""
+    list_display = ['date', 'source', 'display_amount', 'notes']
+    list_filter = ['date', 'source']
+    search_fields = ['source', 'notes']
+    date_hierarchy = 'date'
+
+    def display_amount(self, obj):
+        # تمييز مبالغ الدخل باللون الأخضر المشرق
+        return format_html('<b style="color: #2ecc71; font-size: 14px;">+ {} ج.م</b>', obj.amount)
+    display_amount.short_description = 'المبلغ الوارد'
 
 @admin.register(ContactExpense)
 class ContactExpenseAdmin(admin.ModelAdmin):

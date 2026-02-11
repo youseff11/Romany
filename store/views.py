@@ -3,7 +3,8 @@ from django.db.models import Sum, Prefetch, F, ExpressionWrapper, DecimalField
 from django.contrib.auth.decorators import login_required, user_passes_test
 from .models import (
     DailyTransaction, Product, FinancialRecord, PaymentInstallment, 
-    Contact, BankLoan, BankInstallment, Capital, HomeExpense, ContactExpense
+    Contact, BankLoan, BankInstallment, Capital, HomeExpense, ContactExpense,
+    IncomeRecord  # تم إضافة الموديل الجديد هنا
 )
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -27,50 +28,56 @@ def dashboard(request):
     end_date = request.GET.get('end_date')
     
     transactions_queryset = DailyTransaction.objects.all()
+    income_queryset = IncomeRecord.objects.all() # جلب المبالغ الواردة
     today = timezone.now().date()
 
     # --- فلترة المدة الزمنية ---
     if period == 'today':
         transactions_queryset = transactions_queryset.filter(date=today)
+        income_queryset = income_queryset.filter(date=today)
     elif period == 'week':
-        transactions_queryset = transactions_queryset.filter(date__gte=today - timedelta(days=7))
+        last_week = today - timedelta(days=7)
+        transactions_queryset = transactions_queryset.filter(date__gte=last_week)
+        income_queryset = income_queryset.filter(date__gte=last_week)
     elif period == 'month':
-        transactions_queryset = transactions_queryset.filter(date__gte=today - timedelta(days=30))
+        last_month = today - timedelta(days=30)
+        transactions_queryset = transactions_queryset.filter(date__gte=last_month)
+        income_queryset = income_queryset.filter(date__gte=last_month)
     elif period == 'custom' and start_date and end_date:
         transactions_queryset = transactions_queryset.filter(date__range=[start_date, end_date])
+        income_queryset = income_queryset.filter(date__range=[start_date, end_date])
 
-    # --- حسابات المبيعات والمشتريات ---
+    # --- حسابات المبيعات والمشتريات والوارد ---
     total_sales = transactions_queryset.filter(transaction_type='out').aggregate(total=Sum('total_price'))['total'] or 0
     total_purchases = transactions_queryset.filter(transaction_type='in').aggregate(total=Sum('total_price'))['total'] or 0
+    total_income = income_queryset.aggregate(total=Sum('amount'))['total'] or 0 # مجموع المبالغ الواردة
     
     cost_of_goods_sold = transactions_queryset.filter(transaction_type='out').annotate(
         cost=ExpressionWrapper(F('weight') * F('product__purchase_price_per_kg'), output_field=DecimalField())
     ).aggregate(total=Sum('cost'))['total'] or 0
-    net_profit = total_sales - cost_of_goods_sold
+    
+    # صافي الربح = (أرباح المبيعات + المبالغ الواردة الأخرى)
+    net_profit = (total_sales - cost_of_goods_sold) + total_income
 
     # --- 1. مستحقاتنا (لنا) ---
-    # مبالغ مبيعات لم تُحصل بعد
     receivable_records = FinancialRecord.objects.filter(
         transaction__in=transactions_queryset.filter(transaction_type='out')
     ).annotate(
         remaining=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
     ).filter(remaining__gt=0)
     
-    # مبالغ دفعناها نحن (سلف أو مصاريف على التاجر)
     receivable_expenses = ContactExpense.objects.filter(payer_type='us').select_related('contact').order_by('-date')
     
     total_receivable = (receivable_records.aggregate(total=Sum('remaining'))['total'] or 0) + \
                        (receivable_expenses.aggregate(total=Sum('amount'))['total'] or 0)
 
     # --- 2. مديونيات (علينا) ---
-    # مبالغ مشتريات لم تُدفع بعد
     payable_records = FinancialRecord.objects.filter(
         transaction__in=transactions_queryset.filter(transaction_type='in')
     ).annotate(
         remaining=ExpressionWrapper(F('transaction__total_price') - F('amount_paid'), output_field=DecimalField())
     ).filter(remaining__gt=0)
     
-    # مبالغ دفعها التاجر عنا (ديون علينا)
     pending_expenses = ContactExpense.objects.filter(payer_type='them').select_related('contact').order_by('-date')
     
     total_payable = (payable_records.aggregate(total=Sum('remaining'))['total'] or 0) + \
@@ -81,7 +88,6 @@ def dashboard(request):
     receivable_details = receivable_records.select_related('transaction', 'transaction__contact', 'transaction__product').order_by('transaction__date')
     recent_sales = transactions_queryset.filter(transaction_type='out').select_related('product', 'contact', 'financialrecord').order_by('-date')[:10]
 
-    # (كود البنك يظل كما هو دون تغيير)
     loan = BankLoan.objects.filter(is_active=True).first()
     bank_summary = {'total_remaining': 0, 'bank_name': "لا يوجد قرض نشط"}
     if loan:
@@ -89,20 +95,31 @@ def dashboard(request):
         total_flow = bank_insts.aggregate(Sum('total_installment_amount'))['total_installment_amount__sum'] or 0
         total_paid = bank_insts.filter(is_paid=True).aggregate(Sum('total_installment_amount'))['total_installment_amount__sum'] or 0
         next_inst = bank_insts.filter(is_paid=False, due_date__gte=today).order_by('due_date').first()
-        bank_summary = {'total_remaining': total_flow - total_paid, 'next_installment_amount': next_inst.total_installment_amount if next_inst else 0,
-                        'next_installment_date': next_inst.due_date if next_inst else None, 'bank_name': loan.bank_name}
+        bank_summary = {
+            'total_remaining': total_flow - total_paid, 
+            'next_installment_amount': next_inst.total_installment_amount if next_inst else 0,
+            'next_installment_date': next_inst.due_date if next_inst else None, 
+            'bank_name': loan.bank_name
+        }
 
     context = {
-        'total_sales': total_sales, 'net_profit': net_profit,
-        'receivable': total_receivable, 'payable': total_payable,
-        'receivable_details': receivable_details, 'debt_details': debt_details,
-        'receivable_expenses': receivable_expenses, 'pending_expenses': pending_expenses,
-        'recent_sales': recent_sales, 'inventory': Product.objects.all(),
+        'total_sales': total_sales, 
+        'total_income': total_income,
+        'net_profit': net_profit,
+        'receivable': total_receivable, 
+        'payable': total_payable,
+        'receivable_details': receivable_details, 
+        'debt_details': debt_details,
+        'receivable_expenses': receivable_expenses, 
+        'pending_expenses': pending_expenses,
+        'recent_sales': recent_sales, 
+        'inventory': Product.objects.all(),
         'bank_summary': bank_summary,
         'upcoming_bank_alerts': BankInstallment.objects.filter(is_paid=False, due_date__range=[today, today + timedelta(days=3)]),
         'overdue_bank_alerts': BankInstallment.objects.filter(is_paid=False, due_date__lt=today),
     }
     return render(request, 'dashboard.html', context)
+
 # --- 3. إدارة العمليات المالية والتجار ---
 
 @login_required
@@ -112,37 +129,43 @@ def transactions_list(request):
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
-    # 1. جلب الحركات التجارية (وارد وصادر)
+    # 1. جلب الحركات التجارية
     transactions = DailyTransaction.objects.select_related('product', 'contact', 'financialrecord').all().order_by('-date')
 
-    # 2. جلب مصاريف التجار ومصاريف البيت
+    # 2. جلب المصاريف والمبالغ الواردة (الجديد)
     contact_expenses = ContactExpense.objects.select_related('contact').all().order_by('-date')
     home_expenses = HomeExpense.objects.all().order_by('-date')
+    income_records = IncomeRecord.objects.all().order_by('-date')
 
     # --- تطبيق الفلترة الزمنية على الكل ---
     if period == 'today':
         transactions = transactions.filter(date=today)
         contact_expenses = contact_expenses.filter(date=today)
         home_expenses = home_expenses.filter(date=today)
+        income_records = income_records.filter(date=today)
     elif period == 'week':
         last_week = today - timedelta(days=7)
         transactions = transactions.filter(date__gte=last_week)
         contact_expenses = contact_expenses.filter(date__gte=last_week)
         home_expenses = home_expenses.filter(date__gte=last_week)
+        income_records = income_records.filter(date__gte=last_week)
     elif period == 'month':
         last_month = today - timedelta(days=30)
         transactions = transactions.filter(date__gte=last_month)
         contact_expenses = contact_expenses.filter(date__gte=last_month)
         home_expenses = home_expenses.filter(date__gte=last_month)
+        income_records = income_records.filter(date__gte=last_month)
     elif period == 'custom' and start_date and end_date:
         transactions = transactions.filter(date__range=[start_date, end_date])
         contact_expenses = contact_expenses.filter(date__range=[start_date, end_date])
         home_expenses = home_expenses.filter(date__range=[start_date, end_date])
+        income_records = income_records.filter(date__range=[start_date, end_date])
 
     context = {
         'transactions': transactions,
-        'contact_expenses': contact_expenses, # تم الإضافة
-        'home_expenses': home_expenses,       # تم الإضافة
+        'contact_expenses': contact_expenses,
+        'home_expenses': home_expenses,
+        'income_records': income_records, # تم إضافة الوارد هنا ليعرض في القالب
     }
 
     return render(request, 'transactions.html', context)
@@ -207,8 +230,6 @@ def add_contact_expense(request):
             notes = request.POST.get('notes')
             date = request.POST.get('date') or timezone.now().date()
 
-            # هذا السطر سيقوم بإنشاء المصروف.. 
-            # والـ Signal الموجود في models.py سيتكفل بالخصم من الخزنة تلقائياً مرة واحدة فقط.
             ContactExpense.objects.create(
                 contact_id=contact_id,
                 amount=amount,
@@ -238,17 +259,12 @@ def edit_contact_expense(request, expense_id):
             expense.payer_type = new_payer
             expense.save()
 
-            # تحديث الخزنة بناءً على التغيير
             capital = Capital.objects.first()
             if capital:
-                # إلغاء تأثير المبلغ القديم
                 if old_payer == 'us':
                     capital.initial_amount += old_amount
-                
-                # إضافة تأثير المبلغ الجديد
                 if new_payer == 'us':
                     capital.initial_amount -= new_amount
-                
                 capital.save()
 
             messages.success(request, "تم تعديل المصروف وتحديث الخزنة.")
@@ -444,35 +460,42 @@ def admin_logs_dashboard(request):
 
     home_expenses = HomeExpense.objects.all()
     contact_expenses = ContactExpense.objects.select_related('contact').all()
+    income_records = IncomeRecord.objects.all() # جلب الوارد في سجلات المدير
 
     if period == 'today':
         purchase_logs = purchase_logs.filter(date=today)
         profit_logs = profit_logs.filter(date=today)
         home_expenses = home_expenses.filter(date=today)
         contact_expenses = contact_expenses.filter(date=today)
+        income_records = income_records.filter(date=today)
     elif period == 'week':
         last_week = today - timedelta(days=7)
         purchase_logs = purchase_logs.filter(date__gte=last_week)
         profit_logs = profit_logs.filter(date__gte=last_week)
         home_expenses = home_expenses.filter(date__gte=last_week)
         contact_expenses = contact_expenses.filter(date__gte=last_week)
+        income_records = income_records.filter(date__gte=last_week)
     elif period == 'month':
         last_month = today - timedelta(days=30)
         purchase_logs = purchase_logs.filter(date__gte=last_month)
         profit_logs = profit_logs.filter(date__gte=last_month)
         home_expenses = home_expenses.filter(date__gte=last_month)
         contact_expenses = contact_expenses.filter(date__gte=last_month)
+        income_records = income_records.filter(date__gte=last_month)
     elif start_date and end_date:
         purchase_logs = purchase_logs.filter(date__range=[start_date, end_date])
         profit_logs = profit_logs.filter(date__range=[start_date, end_date])
         home_expenses = home_expenses.filter(date__range=[start_date, end_date])
         contact_expenses = contact_expenses.filter(date__range=[start_date, end_date])
+        income_records = income_records.filter(date__range=[start_date, end_date])
 
     total_sales_profit = profit_logs.aggregate(total=Sum('unit_profit'))['total'] or 0
     total_home_expenses = home_expenses.aggregate(total=Sum('amount'))['total'] or 0
     total_contact_expenses = contact_expenses.aggregate(total=Sum('amount'))['total'] or 0
+    total_income_period = income_records.aggregate(total=Sum('amount'))['total'] or 0
     
-    net_profit_period = total_sales_profit - (total_home_expenses + total_contact_expenses)
+    # صافي ربح الفترة معدل ليشمل المبالغ الواردة
+    net_profit_period = (total_sales_profit + total_income_period) - (total_home_expenses + total_contact_expenses)
 
     capital_obj = Capital.objects.first()
     cash_in_hand = capital_obj.initial_amount if capital_obj else Decimal(0)
@@ -492,6 +515,7 @@ def admin_logs_dashboard(request):
     bank_remaining = BankInstallment.objects.filter(loan=loan, is_paid=False).aggregate(
         total=Sum('total_installment_amount'))['total'] or 0 if loan else 0
 
+    # إجمالي رأس المال = (نقدية + مخزن + ديون لنا) - (ديون علينا + متبقي القرض)
     total_capital = (cash_in_hand + total_inventory_value + receivable) - (payable + bank_remaining)
 
     context = {
@@ -502,6 +526,7 @@ def admin_logs_dashboard(request):
         'payable': payable,
         'bank_remaining': bank_remaining,
         'total_profit_period': total_sales_profit,
+        'total_income_period': total_income_period,
         'total_home_expenses': total_home_expenses,
         'total_contact_expenses': total_contact_expenses,
         'net_profit_period': net_profit_period,
@@ -510,6 +535,7 @@ def admin_logs_dashboard(request):
         'profit_logs': profit_logs.order_by('-date'),
         'home_expenses': home_expenses.order_by('-date'),
         'contact_expenses': contact_expenses.order_by('-date'),
+        'income_logs': income_records.order_by('-date'), # إضافة الوارد للسجلات
         'today': today,
         'start_date': start_date,
         'end_date': end_date,

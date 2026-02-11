@@ -18,7 +18,7 @@
 
     .stat-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 10px 20px     rgba(0,0,0,0.1) !important;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
     }
 
     .glass-effect {
@@ -48,6 +48,7 @@
 
     .row-in { background-color: #f0f9ff !important; }
     .row-out { background-color: #fffbeb !important; }
+    .row-income { background-color: #f0fdf4 !important; } /* أخضر خفيف للوارد */
 </style>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
@@ -58,7 +59,7 @@
             </span>
             سجل الحركة الشامل
         </h2>
-        <p class="text-muted small m-0 mt-1">تتبع كافة العمليات المالية والتجارية في مكان واحد</p>
+        <p class="text-muted small m-0 mt-1">تتبع كافة العمليات المالية، المصاريف، والمبالغ الواردة</p>
     </div>
     
     <div class="btn-group shadow-sm">
@@ -77,20 +78,20 @@
             <div class="card-body p-4 text-white">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-arrow-up fa-lg"></i></div>
-                    <span class="small opacity-75 fw-bold">المبيعات</span>
+                    <span class="small opacity-75 fw-bold">المبيعات (+)</span>
                 </div>
                 <h3 class="fw-bold mb-0" id="total-sales-val">0</h3>
             </div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="card stat-card shadow-sm h-100" style="background: var(--info-grad);">
+        <div class="card stat-card shadow-sm h-100" style="background: var(--success-grad);">
             <div class="card-body p-4 text-white">
                 <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-shopping-cart fa-lg"></i></div>
-                    <span class="small opacity-75 fw-bold">المشتريات</span>
+                    <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-hand-holding-usd fa-lg"></i></div>
+                    <span class="small opacity-75 fw-bold">مبالغ واردة (+)</span>
                 </div>
-                <h3 class="fw-bold mb-0" id="total-purchase-val">0</h3>
+                <h3 class="fw-bold mb-0" id="total-income-val">0</h3>
             </div>
         </div>
     </div>
@@ -99,7 +100,7 @@
             <div class="card-body p-4 text-white">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-wallet fa-lg"></i></div>
-                    <span class="small opacity-75 fw-bold">المصروفات</span>
+                    <span class="small opacity-75 fw-bold">المصروفات (-)</span>
                 </div>
                 <h3 class="fw-bold mb-0" id="total-expenses-val">0</h3>
             </div>
@@ -197,7 +198,45 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="py-5 text-muted">لم يتم العثور على أي حركات في هذه الفترة</td></tr>
+                    <tr><td colspan="7" class="py-5 text-muted">لم يتم العثور على أي حركات تجارية</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden">
+    <div class="card-header bg-success text-white py-3 d-flex justify-content-between align-items-center" style="background: var(--success-grad) !important;">
+        <h6 class="m-0 fw-bold"><i class="fas fa-hand-holding-usd me-2"></i> سجل المبالغ الواردة (الدخل الإضافي)</h6>
+        <a href="/admin/store/incomerecord/add/" class="btn btn-white btn-sm fw-bold print-hide">إضافة مبلغ وارد +</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 text-center" id="income-table">
+                <thead>
+                    <tr>
+                        <th class="py-3">التاريخ</th>
+                        <th class="py-3 text-start">المصدر والبيان</th>
+                        <th class="py-3">المبلغ الوارد</th>
+                        <th class="py-3 print-hide">إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inc in income_records %}
+                    <tr class="income-row row-income" data-amount="{{ inc.amount|floatformat:0 }}">
+                        <td class="small text-muted">{{ inc.date|date:"d/m/Y" }}</td>
+                        <td class="text-start">
+                            <span class="text-success fw-bold d-block">{{ inc.source }}</span>
+                            <small class="text-muted">{{ inc.notes|default:"-" }}</small>
+                        </td>
+                        <td class="text-success fw-bold fs-5">{{ inc.amount|floatformat:0 }}</td>
+                        <td class="print-hide">
+                            <a href="/admin/store/incomerecord/{{ inc.id }}/change/" class="btn btn-sm btn-light"><i class="fas fa-edit"></i></a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="py-4 text-muted small">لا توجد مبالغ واردة مسجلة</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -276,7 +315,9 @@
         let totalSales = 0;
         let totalPurchase = 0;
         let totalExpenses = 0;
+        let totalIncome = 0;
 
+        // حساب المبيعات والمشتريات
         document.querySelectorAll('#trading-table tbody tr').forEach(row => {
             let type = row.getAttribute('data-type');
             let val = Math.round(parseFloat(row.getAttribute('data-total')) || 0);
@@ -284,20 +325,34 @@
             else if (type === 'in') totalPurchase += val;
         });
 
+        // حساب المبالغ الواردة (الجديد)
+        document.querySelectorAll('.income-row').forEach(row => {
+            totalIncome += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
+        });
+
+        // حساب المصروفات
         document.querySelectorAll('.expense-row').forEach(row => {
             totalExpenses += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
         });
 
+        // التحديث في البطاقات
         animateValue("total-sales-val", totalSales);
-        animateValue("total-purchase-val", totalPurchase);
+        animateValue("total-income-val", totalIncome);
         animateValue("total-expenses-val", totalExpenses);
-        animateValue("net-cash-val", (totalSales - totalPurchase - totalExpenses));
+        
+        // المعادلة الجديدة لصافي السيولة: (المبيعات + الوارد) - (المشتريات + المصروفات)
+        let netCash = (totalSales + totalIncome) - (totalPurchase + totalExpenses);
+        animateValue("net-cash-val", netCash);
 
         function animateValue(id, value) {
             const obj = document.getElementById(id);
             if(obj) {
                 obj.innerHTML = Math.round(value).toLocaleString('en-US') + ' <small class="fw-normal">ج.م</small>';
-                if (value < 0) obj.classList.add('text-warning');
+                if (value < 0) {
+                    obj.classList.add('text-warning');
+                } else {
+                    obj.classList.remove('text-warning');
+                }
             }
         }
     });

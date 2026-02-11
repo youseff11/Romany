@@ -12,28 +12,30 @@ urlpatterns = [
     # إضافة حركة (يومية) مباشرة من بروفايل التاجر أو لوحة التحكم
     path('contact/add-transaction/', views.add_transaction_direct, name='add_transaction_direct'),
     
-    # --- المسار الجديد: إضافة مصروف تاجر أو خدمة (نقل، عمالة...) ---
+    # --- 2. مسارات المصاريف (التاجر والخدمات) ---
     path('contact/add-expense/', views.add_contact_expense, name='add_contact_expense'),
+    path('expense/edit/<int:expense_id>/', views.edit_contact_expense, name='edit_contact_expense'),
+
+    # --- 3. مسارات المبالغ الواردة (الدخل الإضافي) ---
+    # توجيه للإضافة والتعديل عبر الأدمن حالياً أو يمكنك بناء Views خاصة لها لاحقاً
+    path('income/add/', lambda r: redirect('/admin/store/incomerecord/add/'), name='add_income'),
     
-    # --- 2. مسارات الحسابات والدخول ---
+    # --- 4. مسارات الحسابات والدخول ---
     path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     
-    # --- 3. مسارات الإدارة المالية (للمسؤول فقط) ---
+    # --- 5. مسارات الإدارة المالية (للمسؤول فقط) ---
     path('update-paid/<int:record_id>/', views.update_paid_amount, name='update_paid_amount'),
-    # المسار الخاص بتعديل مبلغ الدفعة النقدية
     path('payment/edit/<int:payment_id>/', views.edit_payment_amount, name='edit_payment_amount'),
-    
     path('admin-logs/', views.admin_logs_dashboard, name='admin_logs'),
 
-    # --- 4. مسارات قسم البنك ---
+    # --- 6. مسارات قسم البنك ---
     path('bank/statement/', views.bank_statement, name='bank_statement'),
     path('bank/add-installment/', views.add_bank_installment, name='add_bank_installment'),
     path('bank/installment/update-charges/<int:inst_id>/', views.update_installment_charges, name='update_installment_charges'),
     path('bank/installment/toggle/<int:inst_id>/', views.toggle_installment_status, name='toggle_installment_status'),
 
-    # --- 5. مسارات "مصروف البيت" وإدارة الخزنة ---
+    # --- 7. مسارات "مصروف البيت" وإدارة الخزنة ---
     path('home-expenses/add/', lambda r: redirect('/admin/store/homeexpense/add/'), name='add_home_expense'),
     path('capital/update/', lambda r: redirect('/admin/store/capital/'), name='update_capital'),
-    path('expense/edit/<int:expense_id>/', views.edit_contact_expense, name='edit_contact_expense'),
 ]
