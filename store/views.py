@@ -134,15 +134,13 @@ def transactions_list(request):
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
 
-    # 1. جلب الحركات التجارية
+    # 1. جلب البيانات الأساسية
     transactions = DailyTransaction.objects.select_related('product', 'contact', 'financialrecord').all().order_by('-date')
-
-    # 2. جلب المصاريف والمبالغ الواردة (الجديد)
     contact_expenses = ContactExpense.objects.select_related('contact').all().order_by('-date')
     home_expenses = HomeExpense.objects.all().order_by('-date')
     income_records = IncomeRecord.objects.all().order_by('-date')
 
-    # --- تطبيق الفلترة الزمنية على الكل ---
+    # --- تطبيق الفلترة الزمنية ---
     if period == 'today':
         transactions = transactions.filter(date=today)
         contact_expenses = contact_expenses.filter(date=today)
@@ -166,11 +164,14 @@ def transactions_list(request):
         home_expenses = home_expenses.filter(date__range=[start_date, end_date])
         income_records = income_records.filter(date__range=[start_date, end_date])
 
+    # ملاحظة: تم إرسال contact_expenses للقالب للعرض فقط، 
+    # بينما الحسابات في JavaScript ستعتمد على استبعادها بناءً على تعديلك المطلوب.
+
     context = {
         'transactions': transactions,
         'contact_expenses': contact_expenses,
         'home_expenses': home_expenses,
-        'income_records': income_records, # تم إضافة الوارد هنا ليعرض في القالب
+        'income_records': income_records,
     }
 
     return render(request, 'transactions.html', context)

@@ -314,10 +314,10 @@
     document.addEventListener("DOMContentLoaded", function() {
         let totalSales = 0;
         let totalPurchase = 0;
-        let totalExpenses = 0;
+        let totalHomeExpenses = 0; // تم فصل مصروفات البيت
         let totalIncome = 0;
 
-        // حساب المبيعات والمشتريات
+        // 1. حساب المبيعات والمشتريات من جدول العمليات التجارية
         document.querySelectorAll('#trading-table tbody tr').forEach(row => {
             let type = row.getAttribute('data-type');
             let val = Math.round(parseFloat(row.getAttribute('data-total')) || 0);
@@ -325,23 +325,27 @@
             else if (type === 'in') totalPurchase += val;
         });
 
-        // حساب المبالغ الواردة (الجديد)
+        // 2. حساب المبالغ الواردة (الدخل الإضافي)
         document.querySelectorAll('.income-row').forEach(row => {
             totalIncome += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
         });
 
-        // حساب المصروفات
+        // 3. حساب مصروفات البيت فقط (استبعاد مصروفات التجار)
         document.querySelectorAll('.expense-row').forEach(row => {
-            totalExpenses += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
+            // نتحقق مما إذا كان السطر يحتوي على أيقونة البيت للتأكد أنه مصروف منزلي
+            if (row.innerHTML.includes('fa-home')) {
+                totalHomeExpenses += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
+            }
         });
 
-        // التحديث في البطاقات
+        // تحديث أرقام البطاقات في الواجهة
         animateValue("total-sales-val", totalSales);
         animateValue("total-income-val", totalIncome);
-        animateValue("total-expenses-val", totalExpenses);
+        animateValue("total-expenses-val", totalHomeExpenses); // سيعرض الآن إجمالي مصروف البيت فقط
         
-        // المعادلة الجديدة لصافي السيولة: (المبيعات + الوارد) - (المشتريات + المصروفات)
-        let netCash = (totalSales + totalIncome) - (totalPurchase + totalExpenses);
+        // المعادلة المعدلة: (المبيعات + الوارد) - (المشتريات + مصروفات البيت)
+        // ملاحظة: إذا كنت لا تدفع كاش للمشتريات، يمكنك إزالة (totalPurchase) من المعادلة
+        let netCash = (totalSales + totalIncome) - (totalPurchase + totalHomeExpenses);
         animateValue("net-cash-val", netCash);
 
         function animateValue(id, value) {
@@ -349,9 +353,9 @@
             if(obj) {
                 obj.innerHTML = Math.round(value).toLocaleString('en-US') + ' <small class="fw-normal">ج.م</small>';
                 if (value < 0) {
-                    obj.classList.add('text-warning');
+                    obj.style.color = "#ffc107"; // لون تحذيري في حال السالب
                 } else {
-                    obj.classList.remove('text-warning');
+                    obj.style.color = ""; 
                 }
             }
         }
