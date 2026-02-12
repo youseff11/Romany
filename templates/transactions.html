@@ -42,13 +42,10 @@
         border-radius: 8px;
     }
 
-    .table-hover tbody tr {
-        transition: all 0.2s ease;
-    }
-
     .row-in { background-color: #f0f9ff !important; }
     .row-out { background-color: #fffbeb !important; }
-    .row-income { background-color: #f0fdf4 !important; } /* أخضر خفيف للوارد */
+    .row-income { background-color: #f0fdf4 !important; }
+    .underline-dashed { text-decoration: underline dashed; }
 </style>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
@@ -59,7 +56,7 @@
             </span>
             سجل الحركة الشامل
         </h2>
-        <p class="text-muted small m-0 mt-1">تتبع كافة العمليات المالية، المصاريف، والمبالغ الواردة</p>
+        <p class="text-muted small m-0 mt-1">تتبع حركة السيولة والدرج (الكاش الفعلي بناءً على السجلات)</p>
     </div>
     
     <div class="btn-group shadow-sm">
@@ -78,12 +75,14 @@
             <div class="card-body p-4 text-white">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-arrow-up fa-lg"></i></div>
-                    <span class="small opacity-75 fw-bold">المبيعات (+)</span>
+                    <span class="small opacity-75 fw-bold">كاش المبيعات (+)</span>
                 </div>
-                <h3 class="fw-bold mb-0" id="total-sales-val">0</h3>
+                <h3 class="fw-bold mb-0">{{ actual_collection|floatformat:0 }} <small class="fw-normal fs-6">ج.م</small></h3>
+                <small class="opacity-50 small">ما تم تحصيله من الزبائن</small>
             </div>
         </div>
     </div>
+
     <div class="col-6 col-lg-3">
         <div class="card stat-card shadow-sm h-100" style="background: var(--success-grad);">
             <div class="card-body p-4 text-white">
@@ -91,21 +90,25 @@
                     <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-hand-holding-usd fa-lg"></i></div>
                     <span class="small opacity-75 fw-bold">مبالغ واردة (+)</span>
                 </div>
-                <h3 class="fw-bold mb-0" id="total-income-val">0</h3>
+                <h3 class="fw-bold mb-0">{{ total_income|floatformat:0 }} <small class="fw-normal fs-6">ج.م</small></h3>
+                <small class="opacity-50 small">دخل إضافي + وفر مصاريف</small>
             </div>
         </div>
     </div>
+
     <div class="col-6 col-lg-3">
         <div class="card stat-card shadow-sm h-100" style="background: var(--danger-grad);">
             <div class="card-body p-4 text-white">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-wallet fa-lg"></i></div>
-                    <span class="small opacity-75 fw-bold">المصروفات (-)</span>
+                    <span class="small opacity-75 fw-bold">كاش خارج (-)</span>
                 </div>
-                <h3 class="fw-bold mb-0" id="total-expenses-val">0</h3>
+                <h3 class="fw-bold mb-0">{{ total_expenses|add:actual_payments|floatformat:0 }} <small class="fw-normal fs-6">ج.م</small></h3>
+                <small class="opacity-50 small">مصاريفنا + سداد موردين</small>
             </div>
         </div>
     </div>
+
     <div class="col-6 col-lg-3">
         <div class="card stat-card shadow-sm h-100" style="background: var(--dark-grad);">
             <div class="card-body p-4 text-white">
@@ -113,7 +116,10 @@
                     <div class="bg-white bg-opacity-25 p-2 rounded-3 text-white"><i class="fas fa-balance-scale fa-lg"></i></div>
                     <span class="small opacity-75 fw-bold">صافي السيولة</span>
                 </div>
-                <h3 class="fw-bold mb-0" id="net-cash-val">0</h3>
+                <h3 class="fw-bold mb-0 {% if net_cash_flow < 0 %}text-warning{% endif %}">
+                    {{ net_cash_flow|floatformat:0 }} <small class="fw-normal fs-6">ج.م</small>
+                </h3>
+                <small class="opacity-50 small">الرصيد الفعلي حالياً</small>
             </div>
         </div>
     </div>
@@ -156,28 +162,28 @@
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 text-center" id="trading-table">
+            <table class="table table-hover align-middle mb-0 text-center">
                 <thead>
                     <tr>
                         <th class="py-3">التاريخ</th>
                         <th class="py-3">النوع</th>
                         <th class="py-3 text-start">الصنف والتاجر</th>
                         <th class="py-3">الوزن</th>
-                        <th class="py-3">المبلغ</th>
-                        <th class="py-3">المتبقي</th>
+                        <th class="py-3">إجمالي الفاتورة</th>
+                        <th class="py-3 text-success">المدفوع كاش</th>
+                        <th class="py-3 text-danger">المتبقي (دين)</th>
                         <th class="py-3 print-hide"><i class="fas fa-ellipsis-v"></i></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for t in transactions %}
-                    <tr class="{% if t.transaction_type == 'in' %}row-in{% else %}row-out{% endif %}" 
-                        data-type="{{ t.transaction_type }}" data-total="{{ t.total_price|floatformat:0 }}">
+                    <tr class="{% if t.transaction_type == 'in' %}row-in{% else %}row-out{% endif %}">
                         <td class="small text-muted fw-bold">{{ t.date|date:"d/m/Y" }}</td>
                         <td>
                             {% if t.transaction_type == 'in' %}
-                                <span class="badge-custom bg-info-subtle text-info border border-info-subtle small">وارد</span>
+                                <span class="badge-custom bg-info-subtle text-info border border-info-subtle small">وارد (شراء)</span>
                             {% else %}
-                                <span class="badge-custom bg-warning-subtle text-warning-emphasis border border-warning-subtle small">صادر</span>
+                                <span class="badge-custom bg-warning-subtle text-warning-emphasis border border-warning-subtle small">صادر (بيع)</span>
                             {% endif %}
                         </td>
                         <td class="text-start">
@@ -185,10 +191,11 @@
                             <div class="small text-muted"><i class="fas fa-user-circle me-1"></i>{{ t.contact.name }}</div>
                         </td>
                         <td><span class="fw-bold">{{ t.weight|floatformat:0 }}</span> <small class="text-muted">كجم</small></td>
-                        <td class="fw-bold text-primary">{{ t.total_price|floatformat:0 }}</td>
+                        <td class="fw-bold text-dark">{{ t.total_price|floatformat:0 }}</td>
+                        <td class="text-success fw-bold">{{ t.paid|floatformat:0 }}</td>
                         <td>
-                            {% if t.financialrecord.remaining_amount > 0 %}
-                                <span class="text-danger fw-bold underline-dashed">{{ t.financialrecord.remaining_amount|floatformat:0 }}</span>
+                            {% if t.remaining > 0 %}
+                                <span class="text-danger fw-bold underline-dashed">{{ t.remaining|floatformat:0 }}</span>
                             {% else %}
                                 <i class="fas fa-check-circle text-success" title="خالص"></i>
                             {% endif %}
@@ -198,7 +205,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="py-5 text-muted">لم يتم العثور على أي حركات تجارية</td></tr>
+                    <tr><td colspan="8" class="py-5 text-muted">لم يتم العثور على أي حركات تجارية</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -207,13 +214,13 @@
 </div>
 
 <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden">
-    <div class="card-header bg-success text-white py-3 d-flex justify-content-between align-items-center" style="background: var(--success-grad) !important;">
+    <div class="card-header text-white py-3 d-flex justify-content-between align-items-center" style="background: var(--success-grad) !important;">
         <h6 class="m-0 fw-bold"><i class="fas fa-hand-holding-usd me-2"></i> سجل المبالغ الواردة (الدخل الإضافي)</h6>
         <a href="/admin/store/incomerecord/add/" class="btn btn-white btn-sm fw-bold print-hide">إضافة مبلغ وارد +</a>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 text-center" id="income-table">
+            <table class="table table-hover align-middle mb-0 text-center">
                 <thead>
                     <tr>
                         <th class="py-3">التاريخ</th>
@@ -224,7 +231,7 @@
                 </thead>
                 <tbody>
                     {% for inc in income_records %}
-                    <tr class="income-row row-income" data-amount="{{ inc.amount|floatformat:0 }}">
+                    <tr class="row-income">
                         <td class="small text-muted">{{ inc.date|date:"d/m/Y" }}</td>
                         <td class="text-start">
                             <span class="text-success fw-bold d-block">{{ inc.source }}</span>
@@ -245,7 +252,7 @@
 </div>
 
 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-    <div class="card-header bg-danger text-white py-3 d-flex justify-content-between align-items-center" style="background: var(--danger-grad) !important;">
+    <div class="card-header text-white py-3 d-flex justify-content-between align-items-center" style="background: var(--danger-grad) !important;">
         <h6 class="m-0 fw-bold"><i class="fas fa-wallet me-2"></i> سجل المصروفات العام</h6>
         <div class="btn-group btn-group-sm print-hide">
             <a href="/admin/store/contactexpense/add/" class="btn btn-white btn-sm fw-bold">مصرف تاجر +</a>
@@ -254,19 +261,19 @@
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 text-center" id="expenses-table">
+            <table class="table table-hover align-middle mb-0 text-center">
                 <thead>
                     <tr>
                         <th class="py-3">التاريخ</th>
                         <th class="py-3 text-start">البيان</th>
                         <th class="py-3">المبلغ</th>
-                        <th class="py-3">المسؤول عن السداد</th>
+                        <th class="py-3">تأثير السيولة</th>
                         <th class="py-3 print-hide">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for ce in contact_expenses %}
-                    <tr class="expense-row" data-amount="{{ ce.amount|floatformat:0 }}">
+                    <tr>
                         <td class="small text-muted">{{ ce.date|date:"d/m/Y" }}</td>
                         <td class="text-start">
                             <span class="text-info fw-bold d-block"><i class="fas fa-truck-loading me-1"></i> {{ ce.contact.name }}</span>
@@ -275,9 +282,9 @@
                         <td class="text-danger fw-bold fs-5">{{ ce.amount|floatformat:0 }}</td>
                         <td>
                             {% if ce.payer_type == 'us' %}
-                                <span class="badge bg-danger rounded-pill px-3 shadow-sm"><i class="fas fa-arrow-left me-1"></i> نحن سددنا</span>
+                                <span class="badge bg-danger rounded-pill px-3 shadow-sm">خصم من السيولة</span>
                             {% else %}
-                                <span class="badge bg-success rounded-pill px-3 shadow-sm"><i class="fas fa-check me-1"></i> هو سدد</span>
+                                <span class="badge bg-success rounded-pill px-3 shadow-sm">زيادة (دفعها التاجر)</span>
                             {% endif %}
                         </td>
                         <td class="print-hide">
@@ -287,14 +294,14 @@
                     {% endfor %}
 
                     {% for he in home_expenses %}
-                    <tr class="expense-row" data-amount="{{ he.amount|floatformat:0 }}">
+                    <tr>
                         <td class="small text-muted">{{ he.date|date:"d/m/Y" }}</td>
                         <td class="text-start">
                             <span class="text-danger fw-bold d-block"><i class="fas fa-home me-1"></i> مصروف بيت</span>
                             <small class="text-muted">{{ he.description }}</small>
                         </td>
                         <td class="text-danger fw-bold fs-5">{{ he.amount|floatformat:0 }}</td>
-                        <td><span class="badge bg-danger rounded-pill px-3 shadow-sm"><i class="fas fa-arrow-left me-1"></i> نحن سددنا</span></td>
+                        <td><span class="badge bg-danger rounded-pill px-3 shadow-sm">خصم من السيولة</span></td>
                         <td class="print-hide">
                             <a href="/admin/store/homeexpense/{{ he.id }}/change/" class="btn btn-sm btn-light"><i class="fas fa-edit"></i></a>
                         </td>
@@ -310,55 +317,4 @@
     </div>
 </div>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-        let totalSales = 0;
-        let totalPurchase = 0;
-        let totalHomeExpenses = 0; // تم فصل مصروفات البيت
-        let totalIncome = 0;
-
-        // 1. حساب المبيعات والمشتريات من جدول العمليات التجارية
-        document.querySelectorAll('#trading-table tbody tr').forEach(row => {
-            let type = row.getAttribute('data-type');
-            let val = Math.round(parseFloat(row.getAttribute('data-total')) || 0);
-            if (type === 'out') totalSales += val;
-            else if (type === 'in') totalPurchase += val;
-        });
-
-        // 2. حساب المبالغ الواردة (الدخل الإضافي)
-        document.querySelectorAll('.income-row').forEach(row => {
-            totalIncome += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
-        });
-
-        // 3. حساب مصروفات البيت فقط (استبعاد مصروفات التجار)
-        document.querySelectorAll('.expense-row').forEach(row => {
-            // نتحقق مما إذا كان السطر يحتوي على أيقونة البيت للتأكد أنه مصروف منزلي
-            if (row.innerHTML.includes('fa-home')) {
-                totalHomeExpenses += Math.round(parseFloat(row.getAttribute('data-amount')) || 0);
-            }
-        });
-
-        // تحديث أرقام البطاقات في الواجهة
-        animateValue("total-sales-val", totalSales);
-        animateValue("total-income-val", totalIncome);
-        animateValue("total-expenses-val", totalHomeExpenses); // سيعرض الآن إجمالي مصروف البيت فقط
-        
-        // المعادلة المعدلة: (المبيعات + الوارد) - (المشتريات + مصروفات البيت)
-        // ملاحظة: إذا كنت لا تدفع كاش للمشتريات، يمكنك إزالة (totalPurchase) من المعادلة
-        let netCash = (totalSales + totalIncome) - (totalPurchase + totalHomeExpenses);
-        animateValue("net-cash-val", netCash);
-
-        function animateValue(id, value) {
-            const obj = document.getElementById(id);
-            if(obj) {
-                obj.innerHTML = Math.round(value).toLocaleString('en-US') + ' <small class="fw-normal">ج.م</small>';
-                if (value < 0) {
-                    obj.style.color = "#ffc107"; // لون تحذيري في حال السالب
-                } else {
-                    obj.style.color = ""; 
-                }
-            }
-        }
-    });
-</script>
 {% endblock %}

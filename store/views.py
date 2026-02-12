@@ -133,45 +133,98 @@ def transactions_list(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     today = timezone.now().date()
+    
+    # استيراد الأدوات اللازمة للحسابات المتقدمة داخل QuerySet
+    from django.db.models.functions import Coalesce
+    from django.db.models import F, ExpressionWrapper, DecimalField, Sum
+    from decimal import Decimal
+    from datetime import timedelta
 
-    # 1. جلب البيانات الأساسية
-    transactions = DailyTransaction.objects.select_related('product', 'contact', 'financialrecord').all().order_by('-date')
+    # 1. جلب البيانات الأساسية مع إضافة حقول (المدفوع والمتبقي) لكل حركة
+    # نستخدم annotate لحساب القيم بناءً على علاقة الـ OneToOne مع FinancialRecord
+    transactions = DailyTransaction.objects.select_related(
+        'product', 'contact', 'financialrecord'
+    ).annotate(
+        paid=Coalesce(F('financialrecord__amount_paid'), Decimal(0), output_field=DecimalField()),
+        remaining=ExpressionWrapper(
+            F('total_price') - Coalesce(F('financialrecord__amount_paid'), Decimal(0)),
+            output_field=DecimalField()
+        )
+    ).all().order_by('-date')
+
     contact_expenses = ContactExpense.objects.select_related('contact').all().order_by('-date')
     home_expenses = HomeExpense.objects.all().order_by('-date')
     income_records = IncomeRecord.objects.all().order_by('-date')
 
     # --- تطبيق الفلترة الزمنية ---
+    filter_q = {}
     if period == 'today':
-        transactions = transactions.filter(date=today)
-        contact_expenses = contact_expenses.filter(date=today)
-        home_expenses = home_expenses.filter(date=today)
-        income_records = income_records.filter(date=today)
+        filter_q = {'date': today}
     elif period == 'week':
-        last_week = today - timedelta(days=7)
-        transactions = transactions.filter(date__gte=last_week)
-        contact_expenses = contact_expenses.filter(date__gte=last_week)
-        home_expenses = home_expenses.filter(date__gte=last_week)
-        income_records = income_records.filter(date__gte=last_week)
+        filter_q = {'date__gte': today - timedelta(days=7)}
     elif period == 'month':
-        last_month = today - timedelta(days=30)
-        transactions = transactions.filter(date__gte=last_month)
-        contact_expenses = contact_expenses.filter(date__gte=last_month)
-        home_expenses = home_expenses.filter(date__gte=last_month)
-        income_records = income_records.filter(date__gte=last_month)
+        filter_q = {'date__gte': today - timedelta(days=30)}
     elif period == 'custom' and start_date and end_date:
-        transactions = transactions.filter(date__range=[start_date, end_date])
-        contact_expenses = contact_expenses.filter(date__range=[start_date, end_date])
-        home_expenses = home_expenses.filter(date__range=[start_date, end_date])
-        income_records = income_records.filter(date__range=[start_date, end_date])
+        filter_q = {'date__range': [start_date, end_date]}
 
-    # ملاحظة: تم إرسال contact_expenses للقالب للعرض فقط، 
-    # بينما الحسابات في JavaScript ستعتمد على استبعادها بناءً على تعديلك المطلوب.
+    if filter_q:
+        transactions = transactions.filter(**filter_q)
+        contact_expenses = contact_expenses.filter(**filter_q)
+        home_expenses = home_expenses.filter(**filter_q)
+        income_records = income_records.filter(**filter_q)
+
+    # --- الحسابات المالية الإجمالية (الدرج / السيولة) ---
+    
+    # 1. تحصيل المبيعات (ما دخل الدرج من فواتير الصادر 'out')
+    actual_sales_collection = transactions.filter(transaction_type='out').aggregate(
+        total=Coalesce(Sum('paid'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    # 2. إجمالي المداخيل الإضافية من سجل المداخيل
+    total_income_records = income_records.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+
+    # 3. مصاريف التجار التي دفعها التاجر (payer_type='them')
+    # تم التصحيح هنا من 'contact' إلى 'them' لتطابق الموديل
+    total_contact_exp_by_them = contact_expenses.filter(payer_type='them').aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    # إجمالي التدفق الداخل (كاش مبيعات + مبالغ واردة + مبالغ وفرها التاجر بدفعه المصاريف)
+    total_inflow = actual_sales_collection + total_income_records + total_contact_exp_by_them
+
+    # 4. سداد المشتريات (ما خرج فعلياً من الدرج لفواتير الوارد 'in')
+    actual_purchase_payments = transactions.filter(transaction_type='in').aggregate(
+        total=Coalesce(Sum('paid'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    # 5. إجمالي مصاريف البيت
+    total_home_exp = home_expenses.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    # 6. إجمالي مصاريف التجار التي سددناها نحن (payer_type='us')
+    total_contact_exp_us = contact_expenses.filter(payer_type='us').aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    # إجمالي التدفق الخارج الفعلي
+    total_outflow = actual_purchase_payments + total_home_exp + total_contact_exp_us
+    
+    # صافي السيولة النهائي
+    net_cash_flow = total_inflow - total_outflow
 
     context = {
         'transactions': transactions,
         'contact_expenses': contact_expenses,
         'home_expenses': home_expenses,
         'income_records': income_records,
+        'actual_collection': actual_sales_collection,
+        'actual_payments': actual_purchase_payments,
+        'total_income': total_income_records + total_contact_exp_by_them, # الوارد الكلي
+        'total_expenses': total_home_exp + total_contact_exp_us,           # الصادر الكلي
+        'net_cash_flow': net_cash_flow,
     }
 
     return render(request, 'transactions.html', context)
